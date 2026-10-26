@@ -53,7 +53,13 @@ page = client.get("/aleph")
 result["page_status"] = page.status_code
 result["page_has_url"] = b"https://aleph.example.org" in page.data
 if hasattr(console, "render_sidebar"):
-    result["sidebar_link"] = 'href="/aleph"' in console.render_sidebar(modules, "aleph")
+    nav = console.render_sidebar(modules, "aleph")
+    result["sidebar_link"] = 'href="/aleph"' in nav
+    ours = nav.find('href="/aleph"')
+    after = [nav.find(a) for a in ('href="/connectivity"', 'href="/marketplace"', 'onclick="toggleTheme()"') if a in nav]
+    result["sidebar_placed"] = not after or ours < min(after)
+    link = nav[ours:nav.find("</a>", ours)]
+    result["sidebar_no_font_icon"] = "material-symbols" not in link
 anonymous = console.app.test_client().get("/aleph")
 result["anonymous_status"] = anonymous.status_code
 print("PROBE" + json.dumps(result), flush=True)
@@ -99,6 +105,8 @@ class InfraTAKVersionTests(unittest.TestCase):
                 self.assertIn(result["anonymous_status"], (302, 401))   # behind the console login
                 if "sidebar_link" in result:
                     self.assertTrue(result["sidebar_link"])
+                    self.assertTrue(result["sidebar_placed"], "Aleph must sit with the tools, above Connectivity/Marketplace")
+                    self.assertTrue(result["sidebar_no_font_icon"], "icon must not depend on the console's icon-font subset")
 
 
 if __name__ == "__main__":

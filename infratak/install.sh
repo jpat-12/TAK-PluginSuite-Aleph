@@ -23,7 +23,8 @@
 #                          `aleph_domain` setting if present)
 #   --console-hook MODE    pth (default) | append (guarded block in app.py; re-added by heal
 #                          after updates) | none (service + Caddy only)
-#   --cloudtak [DIR]       also install the CloudTAK plugin into DIR (default ~/CloudTAK) and wire
+#   --cloudtak [DIR]       also install the CloudTAK plugin into DIR (default: wherever the running
+#                          cloudtak-api-1 container was started from) and wire
 #                          it to this service with a proxy token; rebuilds CloudTAK
 #   --no-caddy             don't touch the Caddyfile (e.g. you proxy it yourself)
 #   --no-restart           don't restart the infra-TAK console (hook loads on its next restart)
@@ -45,7 +46,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --domain)       shift; DOMAIN="${1:-}" ;;
         --console-hook) shift; HOOK_MODE="${1:-}" ;;
-        --cloudtak)     if [ -n "${2:-}" ] && [ "${2#--}" = "$2" ]; then CLOUDTAK="$2"; shift; else CLOUDTAK="$HOME/CloudTAK"; fi ;;
+        --cloudtak)     if [ -n "${2:-}" ] && [ "${2#--}" = "$2" ]; then CLOUDTAK="$2"; shift; else CLOUDTAK="auto"; fi ;;
         --no-caddy)     DO_CADDY=0 ;;
         --no-restart)   DO_RESTART=0 ;;
         --pull)         DO_PULL=1 ;;
@@ -182,8 +183,17 @@ if [ -n "$CLOUDTAK" ]; then
     if [ ! -s "$TOKEN_FILE" ]; then
         (umask 077; /usr/local/bin/aleph-tak create-token cloudtak proxy > "$TOKEN_FILE")
     fi
-    ALEPH_URL="${PUBLIC_URL:-http://127.0.0.1:8781}" ALEPH_TOKEN="$(cat "$TOKEN_FILE")" \
-        bash "$SRC/cloudtak/install.sh" "$CLOUDTAK"
+    # Non-fatal: a CloudTAK problem must not skip the console restart and summary below.
+    # "auto" lets cloudtak/install.sh find CloudTAK from its running container.
+    CT_ARGS=()
+    [ "$CLOUDTAK" != "auto" ] && CT_ARGS=("$CLOUDTAK")
+    if ALEPH_URL="${PUBLIC_URL:-http://127.0.0.1:8781}" ALEPH_TOKEN="$(cat "$TOKEN_FILE")" \
+        bash "$SRC/cloudtak/install.sh" "${CT_ARGS[@]}"; then
+        CLOUDTAK_RESULT="installed"
+    else
+        CLOUDTAK_RESULT="FAILED (see above) — retry: bash $SRC/cloudtak/install.sh [CloudTAK dir]"
+        warn "CloudTAK plugin not installed; everything else is."
+    fi
 fi
 
 [ "$HOOK_MODE" != "none" ] && [ "$DO_RESTART" -eq 1 ] && restart_console
@@ -199,5 +209,6 @@ else
     [ -n "${ADMIN_PASSWORD:-}" ] && echo "  Admin password (shown once): $ADMIN_PASSWORD"
 fi
 echo "  ATAK token:   aleph-tak create-token <callsign>   (or from the admin page)"
-[ -z "$CLOUDTAK" ] && [ -d "$HOME/CloudTAK/api" ] && echo "  CloudTAK:     re-run with --cloudtak to install the CloudTAK plugin too"
+[ -n "$CLOUDTAK" ] && echo "  CloudTAK:     ${CLOUDTAK_RESULT:-skipped}"
+[ -z "$CLOUDTAK" ] && docker inspect cloudtak-api-1 >/dev/null 2>&1 && echo "  CloudTAK:     re-run with --cloudtak to install the CloudTAK plugin too"
 exit 0

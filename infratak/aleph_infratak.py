@@ -31,6 +31,16 @@ BIN_DIR = os.path.join(ALEPH_HOME, "bin")
 
 _status_cache = {"at": 0.0, "value": None}
 
+# Satellite over a dashed capture box; sized like the console's other nav icons, inherits the
+# link colour (so hover/active/light-mode styling just works).
+SIDEBAR_ICON = (
+    '<svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" '
+    'style="flex-shrink:0;display:block">'
+    '<path d="M13 7 16 4l4 4-3 3"/><path d="M10 10l4-4 4 4-4 4z"/><path d="M7 13l3-3 4 4-3 3"/>'
+    '<path d="M3 15v-1M3 19v-1M3 21h1M7 21h1M11 21h1"/></svg>'
+)
+
 
 def _log(message):
     print(f"[aleph-tak] {message}", file=sys.stderr, flush=True)
@@ -100,10 +110,20 @@ def _wrap_render_sidebar(g):
         try:
             if (modules or {}).get("aleph", {}).get("installed") and "</nav>" in markup and 'href="/aleph"' not in markup:
                 active = " active" if (active_path or "").strip("/").startswith("aleph") else ""
+                # Inline SVG, not a Material Symbols name: the console loads only the icon glyphs
+                # it uses, and an unknown name renders as giant literal text ("SATELLITE_ALT").
                 link = (f'<a href="/aleph" class="nav-item{active}" title="Aleph for TAK">'
-                        '<span class="nav-icon material-symbols-outlined">satellite_alt</span>Aleph</a>\n')
-                cut = markup.rindex("</nav>")
-                markup = markup[:cut] + "  " + link + markup[cut:]
+                        f'{SIDEBAR_ICON}<span>Aleph</span></a>\n  ')
+                # With the other installed tools: right before the first always-present entry
+                # (Connectivity on v10, Marketplace earlier), else at the end of the nav.
+                cut = -1
+                for anchor in ('<a href="/connectivity"', '<a href="/marketplace"', '<button type="button" onclick="toggleTheme()"'):
+                    cut = markup.find(anchor)
+                    if cut != -1:
+                        break
+                if cut == -1:
+                    cut = markup.rindex("</nav>")
+                markup = markup[:cut] + link + markup[cut:]
         except Exception as error:
             _log(f"sidebar link skipped: {error!r}")
         return markup

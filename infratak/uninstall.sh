@@ -20,7 +20,7 @@ PURGE=0; CLOUDTAK=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --purge)    PURGE=1 ;;
-        --cloudtak) if [ -n "${2:-}" ] && [ "${2#--}" = "$2" ]; then CLOUDTAK="$2"; shift; else CLOUDTAK="$HOME/CloudTAK"; fi ;;
+        --cloudtak) if [ -n "${2:-}" ] && [ "${2#--}" = "$2" ]; then CLOUDTAK="$2"; shift; else CLOUDTAK="auto"; fi ;;
         *)          echo "Unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -42,7 +42,7 @@ rm -f /etc/systemd/system/aleph-tak.service /usr/local/bin/aleph-tak
 systemctl daemon-reload
 
 if [ -n "$CLOUDTAK" ] && [ -f "$ALEPH_HOME/src/cloudtak/install.sh" ]; then
-    bash "$ALEPH_HOME/src/cloudtak/install.sh" --remove "$CLOUDTAK"
+    if [ "$CLOUDTAK" = auto ]; then bash "$ALEPH_HOME/src/cloudtak/install.sh" --remove; else bash "$ALEPH_HOME/src/cloudtak/install.sh" --remove "$CLOUDTAK"; fi
 fi
 
 if [ "$PURGE" -eq 1 ]; then
