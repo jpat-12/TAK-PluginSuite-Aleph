@@ -24,7 +24,7 @@ from PIL import Image
 
 DEFAULT_CACHE = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "aleph"
 # Fork: identify honestly to open-data providers (USGS, AWS, Geofabrik, Photon ask for this).
-APP_AGENT = "AlephTAK/1 (+https://github.com/jpat-12/InfraTAK-Plugin-Aleph)"
+APP_AGENT = "AlephTAK/1 (+https://github.com/jpat-12/TAK-PluginSuite-Aleph)"
 WORKERS = 8
 
 

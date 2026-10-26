@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-BEGIN = "# >>> aleph-tak (managed by InfraTAK-Plugin-Aleph — edits here are overwritten)"
+BEGIN = "# >>> aleph-tak (managed by TAK-PluginSuite-Aleph — edits here are overwritten)"
 END = "# <<< aleph-tak"
 USER_BLOCKS_MARKER = "# --- User-added blocks (do not remove) ---"
 DEFAULT_CADDYFILE = "/etc/caddy/Caddyfile"

@@ -25,8 +25,8 @@ release from v0.1.0 to v10.2.30 ([details](docs/INFRATAK-COMPATIBILITY.md)).
 ## Install (infra-TAK host, as root)
 
 ```bash
-git clone https://github.com/jpat-12/InfraTAK-Plugin-Aleph.git
-sudo bash InfraTAK-Plugin-Aleph/infratak/install.sh --cloudtak   # drop --cloudtak if you don't run CloudTAK
+git clone https://github.com/jpat-12/TAK-PluginSuite-Aleph.git
+sudo bash TAK-PluginSuite-Aleph/infratak/install.sh --cloudtak   # drop --cloudtak if you don't run CloudTAK
 ```
 
 That's the whole install: service on `127.0.0.1:8781`, `https://aleph.<your fqdn>` in Caddy, the
