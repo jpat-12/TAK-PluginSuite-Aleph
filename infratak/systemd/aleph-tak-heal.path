@@ -1,0 +1,14 @@
+# Re-applies Aleph's integration whenever infra-TAK rewrites a file it lives in:
+#   /etc/caddy/Caddyfile  — regenerated on every module deploy (v0.1.x drops our site block)
+#   <console>/app.py      — replaced by "Update Now" (git checkout --force); re-checks the hook
+# @CONSOLE_DIR@ is filled in by install.sh.
+[Unit]
+Description=Watch for infra-TAK rewrites that need Aleph's integration re-applied
+
+[Path]
+PathChanged=/etc/caddy/Caddyfile
+PathChanged=@CONSOLE_DIR@/app.py
+Unit=aleph-tak-heal.service
+
+[Install]
+WantedBy=multi-user.target

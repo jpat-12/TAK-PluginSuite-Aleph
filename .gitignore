@@ -1,0 +1,46 @@
+# ── Build output ────────────────────────────────────────────────────────────
+# APKs ship through GitHub Releases / the TAK.gov pipeline, never git.
+*.apk
+*.aab
+atak/build/
+atak/app/build/
+atak/.gradle/
+cloudtak/plugin/node_modules/
+
+# ── Machine-local config and secrets ────────────────────────────────────────
+# local.properties holds SDK paths and signing passwords; local.properties.example is its
+# committed twin. Aleph tokens live only in the service's data dir and device prefs.
+local.properties
+*.jks
+*.keystore
+android_keystore
+.env
+*.token
+
+# ── Service runtime data (only ever under /opt/aleph-tak/data in production) ─
+service/data/
+data/
+
+# ── takdev / IDE / Python state ──────────────────────────────────────────────
+# takdev regenerates plugin.properties and the repackage rules on every build; only its lint
+# AAR is tracked (the build needs it and it isn't downloadable without TAK.gov credentials).
+atak/.takdev/*
+!atak/.takdev/aars/
+atak/.takdev/aars/*
+!atak/.takdev/aars/takdevlint.aar
+atak/app/proguard-gradle-repackage.txt
+.idea/
+*.iml
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# gradle-wrapper.jar is intentionally tracked: the wrapper can't bootstrap without it.
+!atak/gradle/wrapper/gradle-wrapper.jar
+
+# ── OS junk ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

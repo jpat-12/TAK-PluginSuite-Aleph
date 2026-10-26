@@ -1,0 +1,6 @@
+# Pure-Python wheels only — no GDAL, so the service installs the same on any infra-TAK host
+# (Ubuntu 22.04/24.04, x86_64 or arm64) with nothing but python3-venv.
+flask>=2.2,<4
+waitress>=2.1
+pillow>=10
+numpy>=1.25

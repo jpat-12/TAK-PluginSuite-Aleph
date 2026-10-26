@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="al_bg_root">#FF111722</color>
+    <color name="al_text_primary">#FFF1F5F9</color>
+    <color name="al_text_secondary">#FF94A3B8</color>
+    <color name="al_accent">#FF06B6D4</color>
+    <color name="al_error">#FFEF4444</color>
+    <color name="al_warning">#FFEAB308</color>
+    <color name="al_ok">#FF10B981</color>
+</resources>

@@ -1,0 +1,23 @@
+# Aleph for TAK capture service. Installed by infratak/install.sh — edit there, not here.
+[Unit]
+Description=Aleph for TAK capture service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=aleph-tak
+Group=aleph-tak
+Environment=ALEPH_DATA_DIR=/opt/aleph-tak/data
+Environment=PYTHONPATH=/opt/aleph-tak/app
+ExecStart=/opt/aleph-tak/venv/bin/python -m aleph_tak serve
+Restart=on-failure
+RestartSec=5
+# The service only ever writes its data dir; everything else is read-only to it.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/aleph-tak/data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Required by the ATAK plugin system -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault" />
+
+    <!-- Applied in AlephMapComponent.onCreate -->
+    <style name="ATAKPluginTheme" parent="android:Theme.DeviceDefault">
+        <item name="android:colorBackground">@color/al_bg_root</item>
+        <item name="android:textColor">@color/al_text_primary</item>
+    </style>
+</resources>

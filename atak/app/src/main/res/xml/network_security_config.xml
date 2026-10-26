@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only: requests carry an Aleph bearer token. infra-TAK's Caddy serves Aleph with a real
+  certificate; a field node without public DNS can use a self-signed one if the operator
+  installs its CA on the device (hence "user" anchors).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,11 @@
+{
+    "name": "cloudtak-plugin-aleph",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "CloudTAK plugin — Aleph for TAK area capture (thin client of the Aleph capture service)",
+    "scripts": {
+        "check": "node ../check-in-cloudtak.mjs"
+    },
+    "//": "Not built standalone: CloudTAK compiles plugins inside its own web build, which supplies vue, maplibre-gl, @tabler/icons-vue and @tak-ps/cloudtak. `npm run check` copies this plugin into a CloudTAK checkout (CLOUDTAK_DIR) and runs CloudTAK's own vue-tsc + eslint — the exact gate its Docker build enforces."
+}

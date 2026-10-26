@@ -1,0 +1,8 @@
+# LF everywhere: the scripts and units run on Linux servers, and a CRLF bash script fails there
+# even when the repo is copied over from a Windows machine.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.aar binary
+*.zip binary
+*.pdf binary

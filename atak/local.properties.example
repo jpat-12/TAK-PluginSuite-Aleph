@@ -1,0 +1,20 @@
+# Copy this file to local.properties and edit the paths. NEVER commit local.properties.
+#
+# Use FORWARD slashes, even on Windows. Escaped backslash paths (C\:\Users\...) make the
+# build fail with "Plugin with id 'atak-takdev-plugin' not found" plus a misleading
+# "does not specify compileSdk" error.
+
+# Android SDK.
+#   Windows default: C:/Users/<you>/AppData/Local/Android/Sdk
+#   macOS default:   /Users/<you>/Library/Android/sdk
+sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk
+
+# Unzipped ATAK CIV SDK (from tak.gov). All three keys point at the same directory.
+#   Windows: C:/Users/<you>/Desktop/ATAK Development/ATAK-CIV-5.6.0-SDK
+#   macOS:   /Users/<you>/ATAK Development/ATAK-CIV-5.6.0-SDK
+sdk.path=C:/Users/<you>/Desktop/ATAK Development/ATAK-CIV-5.6.0-SDK
+atak.sdk.path=C:/Users/<you>/Desktop/ATAK Development/ATAK-CIV-5.6.0-SDK
+
+# takdev Gradle plugin jar. It ships inside the SDK directory; usually no need to change
+# this beyond the SDK path above.
+takdev.plugin=C:/Users/<you>/Desktop/ATAK Development/ATAK-CIV-5.6.0-SDK/atak-gradle-takdev.jar

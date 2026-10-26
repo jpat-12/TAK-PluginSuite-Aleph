@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aleph Capture</string>
+    <string name="app_desc">Capture an area as an offline data package — imagery, DTED elevation, OSM roads/trails/buildings and street-level photos — from an Aleph for TAK server on infra-TAK.</string>
+</resources>

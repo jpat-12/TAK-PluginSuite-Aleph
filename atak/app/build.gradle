@@ -1,0 +1,223 @@
+////////////////////////////////////////////////////////////////////////////////
+// PLUGIN_VERSION: read from the repo-root VERSION file, the one version shared by the service,
+//                 the CloudTAK plugin and this APK. Bump PATCH by 0.0.1 per build unless a
+//                 bigger bump is asked for.
+// ATAK_VERSION:   the ATAK SDK this tree compiles against.
+////////////////////////////////////////////////////////////////////////////////
+
+buildscript {
+    ext.PLUGIN_VERSION = new File(rootDir, "../VERSION").text.trim()
+    ext.ATAK_VERSION = '5.6.0'
+
+    def getValueFromPropertiesFile = { propFile, key ->
+        if (!propFile.isFile() || !propFile.canRead())
+            return null
+        def prop = new Properties()
+        propFile.withReader { prop.load(it) }
+        return prop.get(key)
+    }
+
+    def getProperty = { name, defValue ->
+        def prop = project.properties[name] ?:
+                getValueFromPropertiesFile(project.rootProject.file('local.properties'), name)
+        return (null == prop) ? defValue : prop
+    }
+
+    // takdev reads isDevKitEnabled()/takrepo* from the project even when it's loaded from the
+    // local SDK jar, so they must exist. With no `takrepo.url` set (the normal dev-machine case)
+    // takdev comes from local.properties `takdev.plugin` and no tak.gov credentials are needed.
+    def urlKey = 'takrepo.url'
+    ext.isDevKitEnabled = { -> getProperty(urlKey, null) != null }
+    ext.takrepoUrl = getProperty(urlKey, 'https://localhost/')
+    ext.takrepoUser = getProperty('takrepo.user', 'invalid')
+    ext.takrepoPassword = getProperty('takrepo.password', 'invalid')
+    ext.takdevPlugin = getProperty('takdev.plugin', "${rootDir}/buildtools/atak-gradle-takdev.jar")
+    ext.atakSdkPath  = getProperty('atak.sdk.path', null)
+
+    repositories {
+        google()
+        mavenCentral()
+        mavenLocal()
+        maven {
+            url = takrepoUrl
+            credentials {
+                username = takrepoUser
+                password = takrepoPassword
+            }
+        }
+    }
+    dependencies {
+        if (isDevKitEnabled()) {
+            classpath "com.atakmap.gradle:atak-gradle-takdev:3.+"
+        } else {
+            classpath files(takdevPlugin)
+        }
+    }
+}
+
+plugins {
+    id("com.android.application")
+}
+apply {
+    plugin("atak-takdev-plugin")
+}
+
+// takdev adds the takrepo placeholder (https://localhost/) to the project repositories, which
+// overrides settings.gradle under PREFER_PROJECT — so the real ones must be restated here or
+// aapt2 resolution goes to localhost and fails.
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        mavenLocal()
+    }
+}
+
+def supportedFlavors =
+[
+    [ name : 'civ', default: true ],
+    [ name : 'mil' ],
+    [ name : 'gov' ],
+]
+
+android {
+    compileSdk 36
+    namespace = 'com.atakmap.android.aleph.plugin'
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Signed with the stock ATAK SDK dev key straight out of the SDK directory, so there is
+    // no keystore to copy or commit. A real release key (TAK.gov third-party pipeline)
+    // replaces this before anything is fielded.
+    signingConfigs {
+        sdkDebug {
+            storeFile file("${atakSdkPath}/android_keystore")
+            storePassword "tnttnt"
+            keyAlias "wintec_mapping"
+            keyPassword "tnttnt"
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            signingConfig = signingConfigs.sdkDebug
+            matchingFallbacks = ['sdk']
+        }
+        release {
+            minifyEnabled true
+            proguardFiles 'proguard-gradle.txt', 'proguard-gradle-repackage.txt'
+            signingConfig = signingConfigs.sdkDebug
+            matchingFallbacks = ['odk']
+        }
+    }
+
+    flavorDimensions "application"
+
+    productFlavors {
+        supportedFlavors.each { flav ->
+            "${flav.name}" {
+                getIsDefault().set(flav.default)
+                dimension "application"
+
+                if (!flav.name.equals("civ") && !flav.name.equals("mil")) {
+                    applicationIdSuffix = ".${flav.name}"
+                }
+                matchingFallbacks = ['civ']
+
+                def pluginApiFlavor = flav.name.equals('gov') ? 'CIV' : "${flav.name.toUpperCase()}"
+                manifestPlaceholders = [atakApiVersion: "com.atakmap.app@" + ATAK_VERSION + ".${pluginApiFlavor}"]
+            }
+        }
+        applicationVariants.all { variant ->
+            variant.resValue "string", "versionName", variant.versionName
+            buildConfigField 'String', 'ATAK_PACKAGE_NAME', '"com.atakmap.app.civ"'
+        }
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/INDEX.LIST']
+        }
+        jniLibs.useLegacyPackaging = true
+    }
+
+    sourceSets {
+        debug.setRoot('build-types/debug')
+        release.setRoot('build-types/release')
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode derivedVersionCode()
+        versionName "${PLUGIN_VERSION}+atak${atakMajorMinor()}"
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86"
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "ATAK-Plugin-Aleph-${PLUGIN_VERSION}-ATAK-${atakMajorMinor()}-${variant.flavorName}-${variant.buildType.name}.apk"
+        }
+    }
+
+    testOptions {
+        // Lets plain JUnit tests touch android.* classes (returning defaults) without
+        // Robolectric — the tests here only exercise pure logic.
+        unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        abortOnError = false
+    }
+}
+
+afterEvaluate {
+    // proguard-gradle.txt's -applymapping needs atak.proguard.mapping set to something
+    // resolvable even when takdev didn't supply the SDK mapping.
+    if (!System.properties.containsKey('atak.proguard.mapping')) {
+        def emptyMapping = new File("${buildDir}/takdev-mapping-fallback.txt")
+        emptyMapping.parentFile.mkdirs()
+        if (!emptyMapping.exists()) emptyMapping.text = ''
+        System.setProperty('atak.proguard.mapping', emptyMapping.absolutePath)
+    }
+    project.file('proguard-gradle-repackage.txt').text = "-repackageclasses atakplugin.${rootProject.getName()}"
+}
+
+// ATAK_VERSION trimmed to major.minor, e.g. "5.6.0" -> "5.6".
+def atakMajorMinor() {
+    return ATAK_VERSION.tokenize('.').take(2).join('.')
+}
+
+// versionCode = MAJOR*1_000_000 + MINOR*10_000 + PATCH*100 + ATAK minor (same scheme as
+// FeatureLink). Derived, never hand-edited — a frozen versionCode means no fielded device
+// ever upgrades in place.
+def derivedVersionCode() {
+    def v = PLUGIN_VERSION.tokenize('.')
+    def atakMinor = ATAK_VERSION.tokenize('.')[1] as int
+    return (v[0] as int) * 1000000 + (v[1] as int) * 10000 + (v[2] as int) * 100 + atakMinor
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: '*.jar')
+
+    // takdev normally provides the ATAK API; its remote resolution is skipped on this setup,
+    // so compile against the SDK's main.jar directly (ATAK supplies it at runtime).
+    if (atakSdkPath) {
+        compileOnly files("${atakSdkPath}/main.jar")
+        testImplementation files("${atakSdkPath}/main.jar")
+    }
+
+    testImplementation 'junit:junit:4.13.2'
+    // org.json on the JVM: android.jar's copy is a stub under returnDefaultValues.
+    testImplementation 'org.json:json:20240303'
+}
