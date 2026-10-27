@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests the WinTAK plugin's Core/ (pure logic: no WinTAK, no WPF) on plain .NET, so they run
+       anywhere — the plugin itself needs WinTAK installed to build. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\AlephWinTak\Core\Models.cs;..\AlephWinTak\Core\AreaMath.cs;..\AlephWinTak\Core\DtedCell.cs;..\AlephWinTak\Core\DtedInstaller.cs;..\AlephWinTak\Core\AlephClient.cs" Link="Core\%(Filename)%(Extension)" />
+    <!-- The package the Python service wrote (shared with the ATAK plugin's tests). -->
+    <None Include="..\..\atak\app\src\test\resources\aleph-package-dted1.zip" Link="aleph-package-dted1.zip" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>

@@ -16,6 +16,8 @@ class VersionTests(unittest.TestCase):
         from aleph_tak import __version__
         self.assertEqual(__version__, version)
         self.assertEqual(json.loads((ROOT / "cloudtak/plugin/package.json").read_text())["version"], version)
+        csproj = (ROOT / "wintak/AlephWinTak/AlephWinTak.csproj").read_text()
+        self.assertIn("ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION')", csproj)
         gradle = (ROOT / "atak/app/build.gradle").read_text()
         self.assertTrue(re.search(r'PLUGIN_VERSION = new File\(rootDir, "\.\./VERSION"\)', gradle))
 
@@ -23,6 +25,8 @@ class VersionTests(unittest.TestCase):
         from aleph_tak import API_VERSION
         ts = (ROOT / "cloudtak/plugin/lib/client.ts").read_text()
         java = (ROOT / "atak/app/src/main/java/com/atakmap/android/aleph/api/Models.java").read_text()
+        cs = (ROOT / "wintak/AlephWinTak/Core/Models.cs").read_text(encoding="utf-8")
+        self.assertIn(f"SupportedApi = {API_VERSION};", cs)
         self.assertIn(f"SUPPORTED_API = {API_VERSION};", ts)
         self.assertIn(f"SUPPORTED_API = {API_VERSION};", java)
 

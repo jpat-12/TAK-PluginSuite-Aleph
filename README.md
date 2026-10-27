@@ -1,6 +1,6 @@
 # Aleph for TAK
 
-**Draw a search area in ATAK or CloudTAK and get back an offline TAK data package of it** —
+**Draw a search area in ATAK, WinTAK or CloudTAK and get back an offline TAK data package of it** —
 open-data aerial imagery, DTED elevation, OSM roads/trails/buildings/water/power lines, and
 street-level photos — captured by one service on your infra-TAK server, instead of each team
 hand-assembling imagery, DTED and KML from five websites before a sortie, or relying on
@@ -42,7 +42,8 @@ they paste the server URL + token into the ATAK plugin.
 | Client | Command | Output |
 |---|---|---|
 | ATAK (5.6 SDK) | `cp atak/local.properties.example atak/local.properties` (edit paths), then `cd atak && JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" ./gradlew assembleCivDebug testCivDebugUnitTest` | `atak/app/build/outputs/apk/civ/debug/ATAK-Plugin-Aleph-<ver>-ATAK-5.6-civ-debug.apk` |
-| CloudTAK (13.14.1) | compiled inside CloudTAK by `cloudtak/install.sh`; check without deploying: `CLOUDTAK_DIR=/path/to/CloudTAK node cloudtak/check-in-cloudtak.mjs` | baked into the CloudTAK API image |
+| WinTAK (5.6) | `dotnet build wintak/AlephWinTak -c Release` (needs WinTAK installed); install: elevated `.\wintak\install.ps1`; tests: `dotnet test wintak/AlephWinTak.Tests` | `wintak/AlephWinTak/bin/Release/AlephWinTak.dll` → `<WinTAK>\Plugins\` |
+| CloudTAK (13.14 and 13.1xx layouts) | compiled inside CloudTAK by `cloudtak/install.sh`; check without deploying: `CLOUDTAK_DIR=/path/to/CloudTAK node cloudtak/check-in-cloudtak.mjs` | baked into the CloudTAK API image |
 | Service | `cd service && python -m unittest discover -s tests -t .` | runs from source; `install.sh` sets up its venv |
 
 ## Layout
@@ -80,6 +81,15 @@ cloudtak/                        CloudTAK plugin
   server/plugin-aleph.ts         server half → api/routes/: relays JSON with a server-side proxy token
   install.sh                     copies both halves, merges ALEPH_URL/TOKEN into api/.env, rebuilds
   check-in-cloudtak.mjs          runs CloudTAK's own lint + vue-tsc against the plugin
+wintak/                          WinTAK plugin (C#, .NET Framework 4.8, WinTAK 5.6 SDK = the installed WinTAK's DLLs)
+  AlephWinTak/
+    AlephModule.cs, AlephButton.cs   MEF/Prism entry + Home → Tools ribbon button
+    AlephDockPane.cs                 the pane (MEF imports: import manager, WinTAK's area pickers, map, DTED registry)
+    AlephViewModel.cs, AlephView.xaml  the flow: connect → area → layers → estimate → capture → download & import
+    Core/                            pure logic, no WinTAK: AlephClient (HTTP + resumable SHA-256 download),
+                                     Models, AreaMath, DtedCell/DtedInstaller (fill-voids merge), AlephSettings (DPAPI token)
+  AlephWinTak.Tests/                 .NET 8 xunit tests of Core/ against the same service-written fixture as ATAK
+  install.ps1                        elevated install/remove into <WinTAK>\Plugins
 atak/                            ATAK plugin (Java, ATAK-CIV 5.6 SDK)
   app/src/main/java/com/atakmap/android/aleph/
     AlephDropDownReceiver.java   the panel (UI only; work goes to the worker thread)
@@ -106,7 +116,7 @@ atak/                            ATAK plugin (Java, ATAK-CIV 5.6 SDK)
 | infra-TAK integration on any version | ✅ | Hook verified on all 250 infra-TAK releases (v0.1.0 → v10.2.30); Caddy + heal tested locally. **Full `install.sh` not yet run on a real host** |
 | Phase 2 — CloudTAK plugin | 🔧 Built | Passes CloudTAK 13.14.1's lint + `vue-tsc`; not yet run in a live CloudTAK |
 | Phase 3 — ATAK plugin | 🔧 Built | APK builds and its unit tests pass against the 5.6 SDK; needs the airplane-mode device test (docs/VERIFY.md) |
-| Phase 4 — WinTAK plugin | ⬜ Not started | Plan order: after ATAK. The package already imports into WinTAK without a plugin |
+| Phase 4 — WinTAK plugin | 🔧 Built | Builds against the installed WinTAK 5.6.0.151 with 0 warnings; MEF exports verified; 15 Core tests pass. Uses WinTAK's own rectangle / polygon / existing-shape pickers and import pipeline. Not yet loaded in a running WinTAK |
 | TAK Server Data Sync push, field node, AI terrain brief | ⬜ Phase 5 | Decisions needed (below) |
 | ATAK token onboarding by QR | ⬜ Deferred | Paste URL + token for now |
 

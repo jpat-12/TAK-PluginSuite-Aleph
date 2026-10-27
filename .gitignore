@@ -44,3 +44,7 @@ venv/
 Thumbs.db
 desktop.ini
 *.log
+
+# ── WinTAK plugin build output ───────────────────────────────────────────────
+wintak/**/bin/
+wintak/**/obj/

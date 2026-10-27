@@ -3,8 +3,8 @@
 Facts an agent needs that the code can't show. Workspace-wide rules: `../CLAUDE.md`.
 
 ## Shape of the repo
-- One service (`service/`, Python) + three integrations: infra-TAK host (`infratak/`), CloudTAK
-  plugin (`cloudtak/`), ATAK plugin (`atak/`). **`docs/API.md` is the contract** between them;
+- One service (`service/`, Python) + four integrations: infra-TAK host (`infratak/`), CloudTAK
+  plugin (`cloudtak/`), ATAK plugin (`atak/`), WinTAK plugin (`wintak/`). **`docs/API.md` is the contract** between them;
   change it together with `service/tests/test_api.py`, then the clients.
 - `service/aleph_tak/core/` is a one-time fork of Aleph. Don't sync upstream (see core/FORK.md).
   Never reintroduce a Google endpoint — that's the plan's main blocker, not a style choice.
@@ -31,6 +31,9 @@ Facts an agent needs that the code can't show. Workspace-wide rules: `../CLAUDE.
 - CloudTAK gate: `CLOUDTAK_DIR=<CloudTAK checkout with api/web npm-installed> node cloudtak/check-in-cloudtak.mjs`
 - ATAK: `cd atak && JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" ./gradlew assembleCivDebug testCivDebugUnitTest`
   (local.properties: forward slashes — see local.properties.example).
+- WinTAK: `dotnet build wintak/AlephWinTak -c Release` (compiles against `C:\Program Files\WinTAK`; WinTAK DLLs
+  are references, never copied) and `dotnet test wintak/AlephWinTak.Tests`. The WinTAK API was read by
+  reflection from WinTAK 5.6.0.151 — re-check AlephDockPane's imports when WinTAK updates.
 - Regenerate the Java DTED fixture after changing `formats/dted.py`: `cd service && python -m tests.make_atak_fixture`.
 
 ## Never run without Jon asking

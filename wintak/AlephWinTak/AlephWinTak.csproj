@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WinTAK plugin: a single DLL dropped into <WinTAK>\Plugins. Compiles against the WinTAK you have
+    installed (WinTakDir); nothing from it is copied into the output — WinTAK supplies it at runtime.
+    Verified against WinTAK 5.6.0.151 (.NET Framework 4.8, x64, Prism 6.3 + MEF).
+
+      dotnet build wintak/AlephWinTak -c Release        (or -p:WinTakDir="D:\WinTAK")
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>AlephWinTak</AssemblyName>
+    <RootNamespace>AlephWinTak</RootNamespace>
+    <Nullable>disable</Nullable>
+    <!-- One version for the whole repo (root VERSION). -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</Version>
+    <WinTakDir Condition="'$(WinTakDir)' == ''">C:\Program Files\WinTAK</WinTakDir>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
+  </ItemGroup>
+
+  <!-- WinTAK's own assemblies: compile-time only (Private=false). -->
+  <ItemGroup>
+    <WinTakRef Include="WinTak.Framework;WinTak.Common;WinTak.Graphics;WinTak.Mapping;WinTak.Import;WinTak.Display;TAK.Engine;Prism;Prism.Wpf;Prism.Mef.Wpf;Newtonsoft.Json" />
+    <Reference Include="@(WinTakRef)">
+      <HintPath>$(WinTakDir)\%(Identity).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\*.png" />
+  </ItemGroup>
+
+  <Target Name="CheckWinTak" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(WinTakDir)\WinTak.Framework.dll')"
+           Text="WinTAK not found at '$(WinTakDir)'. Install WinTAK or pass -p:WinTakDir=&quot;path\to\WinTAK&quot;." />
+  </Target>
+
+</Project>
