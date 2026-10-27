@@ -167,7 +167,14 @@ class Runner:
         check = self._check(job_id)
         job["state"] = "running"
         self.store.save(job)
-        client = Client(cancel=check, cache_dir=self.config.cache_dir)
+        def request_log(method, address, attempt, error=None):
+            # Successes stay quiet; every failed attempt is logged, so a slow capture shows *why*
+            # (USGS 502s, timeouts) in `journalctl -u aleph-tak` instead of just crawling.
+            if error is not None:
+                host = address.split("/")[2] if "://" in address else address
+                log.warning("[aleph-tak] job %s: %s attempt %d failed: %s", job_id, host, attempt + 1, error)
+
+        client = Client(cancel=check, cache_dir=self.config.cache_dir, request_log=request_log)
         polygon = [(lat, lon) for lon, lat in job["area"]["coordinates"][0][:-1]]
         results = {}
         for layer in job["layers"]:
@@ -175,10 +182,15 @@ class Runner:
             state.update(state="running", phase=None, done=0, total=None, error=None)
             self.store.save(job)
             last_save = [0.0]
+            last_log = [time.monotonic()]
+            log.info("[aleph-tak] job %s: %s started", job_id, layer)
 
-            def progress(phase, done=0, total=None, unit=None, state=state):
+            def progress(phase, done=0, total=None, unit=None, state=state, layer=layer):
                 check()
                 state.update(phase=phase, done=done, total=total)
+                if time.monotonic() - last_log[0] > 30:  # a heartbeat for long layers
+                    log.info("[aleph-tak] job %s: %s — %s %s/%s", job_id, layer, phase, done, total or "?")
+                    last_log[0] = time.monotonic()
                 if time.monotonic() - last_save[0] > 1:
                     job["percent"] = overall_percent(job)
                     self.store.save(job)
@@ -195,6 +207,7 @@ class Runner:
                 log.debug(traceback.format_exc())
                 state.update(state="failed", error=str(error) or type(error).__name__)
             else:
+                log.info("[aleph-tak] job %s: %s complete %s", job_id, layer, result.stats)
                 results[layer] = result
                 state.update(state="complete", stats=result.stats)
                 job["warnings"].extend(result.warnings)
@@ -214,6 +227,7 @@ class Runner:
             return self._finish_cancelled(job)
         job.update(state="complete", percent=100, finished_at=now())
         self.store.save(job)
+        log.info("[aleph-tak] job %s complete: %s (%.1f MB)", job_id, job["package"]["filename"], job["package"]["bytes"] / 1e6)
 
     def _finish_cancelled(self, job):
         job = {**job, "state": "cancelled"}
