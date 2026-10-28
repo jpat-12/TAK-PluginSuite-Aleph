@@ -1,5 +1,5 @@
 // Capture previews on the CloudTAK map, plus the two map interactions the panel needs
-// (drag-free rectangle drawing and one-shot point picking).
+// (drag-free rectangle drawing and one-shot point picking). Swipe-compare lives in swipe.ts.
 //
 // Deliberate deviation from AGENTS.md's "data goes through the worker DB": a capture is a
 // reference overlay (imagery tiles + thousands of OSM features), not CoT. Pushing it through
@@ -9,6 +9,7 @@
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { pluginApi } from './plugin-api.ts';
 import { bboxPolygon } from './area.ts';
+import { stopSwipe } from './swipe.ts';
 import type { Job, Polygon } from './types.ts';
 
 const PREFIX = 'plugin-aleph-';
@@ -26,12 +27,12 @@ function map(): MapLibreMap {
 }
 
 /** Put overlays under CloudTAK's own symbols so CoT markers stay on top of imagery. */
-function firstSymbolLayer(): string | undefined {
-    return map().getStyle().layers?.find((layer) => layer.type === 'symbol' || layer.type === 'circle')?.id;
+function firstSymbolLayer(target: MapLibreMap): string | undefined {
+    return target.getStyle().layers?.find((layer) => layer.type === 'symbol' || layer.type === 'circle')?.id;
 }
 
-function addLayer(layer: LayerSpecification, below = true): void {
-    if (!map().getLayer(layer.id)) map().addLayer(layer, below ? firstSymbolLayer() : undefined);
+function addLayer(layer: LayerSpecification, below = true, target: MapLibreMap = map()): void {
+    if (!target.getLayer(layer.id)) target.addLayer(layer, below ? firstSymbolLayer(target) : undefined);
 }
 
 function colorByLayer(fallback: string): unknown[] {
@@ -42,38 +43,61 @@ export function isShown(job: Job): boolean {
     return Boolean(map().getSource(`${PREFIX}${job.id}-area`));
 }
 
+/** True if the capture has anything to compare against the basemap (imagery or OSM). */
+export function hasMapData(job: Job): boolean {
+    return Boolean((job.links?.tiles && job.links.tiles_info) || job.links?.osm);
+}
+
+/**
+ * The capture's data layers (imagery, OSM, photos — not the area outline) on `target`. Shared
+ * by the main map and the swipe-compare overlay (swipe.ts), so both draw the same thing.
+ */
+export function addJobData(target: MapLibreMap, job: Job, imagerySource = 'open-data imagery'): void {
+    const links = job.links;
+    if (!links) return;
+    const id = `${PREFIX}${job.id}`;
+    if (links.tiles && links.tiles_info && !target.getSource(`${id}-img`)) {
+        target.addSource(`${id}-img`, {
+            type: 'raster', tiles: [links.tiles], tileSize: 256,
+            minzoom: links.tiles_info.min_zoom, maxzoom: links.tiles_info.max_zoom,
+            bounds: links.tiles_info.bounds, attribution: `Imagery: ${imagerySource}`,
+        });
+        addLayer({ id: `${id}-img`, type: 'raster', source: `${id}-img` }, true, target);
+    }
+    if (links.osm && !target.getSource(`${id}-osm`)) {
+        target.addSource(`${id}-osm`, { type: 'geojson', data: links.osm, attribution: '© OpenStreetMap contributors' });
+        addLayer({ id: `${id}-osm-fill`, type: 'fill', source: `${id}-osm`, filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'fill-color': colorByLayer('#ff8000') as never, 'fill-opacity': 0.25 } }, true, target);
+        addLayer({ id: `${id}-osm-line`, type: 'line', source: `${id}-osm`,
+            filter: ['in', ['geometry-type'], ['literal', ['LineString', 'MultiLineString', 'Polygon']]],
+            paint: { 'line-color': colorByLayer('#ffffff') as never, 'line-width': 1.5 } }, true, target);
+    }
+    if (links.photos && !target.getSource(`${id}-photos`)) {
+        target.addSource(`${id}-photos`, { type: 'geojson', data: links.photos, attribution: 'Photos © Mapillary contributors, CC BY-SA' });
+        addLayer({ id: `${id}-photos`, type: 'circle', source: `${id}-photos`,
+            paint: { 'circle-radius': 5, 'circle-color': '#06b6d4', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 } }, false, target);
+    }
+}
+
+/** Ids of the main map's data layers for a job (everything but the area outline). */
+export function jobDataLayers(jobId: string): LayerSpecification[] {
+    const prefix = `${PREFIX}${jobId}`;
+    return (map().getStyle().layers ?? []).filter((layer) => layer.id.startsWith(prefix) && layer.id !== `${prefix}-area`);
+}
+
 export function showJob(job: Job, imagerySource = 'open-data imagery'): void {
     const links = job.links;
     if (!links) return;
     const id = `${PREFIX}${job.id}`;
     const m = map();
-    if (links.tiles && links.tiles_info && !m.getSource(`${id}-img`)) {
-        m.addSource(`${id}-img`, {
-            type: 'raster', tiles: [links.tiles], tileSize: 256,
-            minzoom: links.tiles_info.min_zoom, maxzoom: links.tiles_info.max_zoom,
-            bounds: links.tiles_info.bounds, attribution: `Imagery: ${imagerySource}`,
-        });
-        addLayer({ id: `${id}-img`, type: 'raster', source: `${id}-img` });
-    }
-    if (links.osm && !m.getSource(`${id}-osm`)) {
-        m.addSource(`${id}-osm`, { type: 'geojson', data: links.osm, attribution: '© OpenStreetMap contributors' });
-        addLayer({ id: `${id}-osm-fill`, type: 'fill', source: `${id}-osm`, filter: ['==', ['geometry-type'], 'Polygon'],
-            paint: { 'fill-color': colorByLayer('#ff8000') as never, 'fill-opacity': 0.25 } });
-        addLayer({ id: `${id}-osm-line`, type: 'line', source: `${id}-osm`,
-            filter: ['in', ['geometry-type'], ['literal', ['LineString', 'MultiLineString', 'Polygon']]],
-            paint: { 'line-color': colorByLayer('#ffffff') as never, 'line-width': 1.5 } });
-    }
-    if (links.photos && !m.getSource(`${id}-photos`)) {
-        m.addSource(`${id}-photos`, { type: 'geojson', data: links.photos, attribution: 'Photos © Mapillary contributors, CC BY-SA' });
-        addLayer({ id: `${id}-photos`, type: 'circle', source: `${id}-photos`,
-            paint: { 'circle-radius': 5, 'circle-color': '#06b6d4', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 } }, false);
-    }
+    addJobData(m, job, imagerySource);
     m.addSource(`${id}-area`, { type: 'geojson', data: links.area });
     addLayer({ id: `${id}-area`, type: 'line', source: `${id}-area`,
         paint: { 'line-color': '#06b6d4', 'line-width': 2, 'line-dasharray': [2, 2] } }, false);
 }
 
 export function hideJob(jobId: string): void {
+    stopSwipe(jobId);
     const m = map();
     const prefix = `${PREFIX}${jobId}`;
     for (const layer of [...(m.getStyle().layers ?? [])]) {
@@ -93,6 +117,7 @@ export function zoomTo(polygon: Polygon): void {
 
 /** Everything this plugin ever put on the map. Safe when the map isn't loaded yet. */
 export function removeAll(): void {
+    stopSwipe();
     try {
         const m = map();
         for (const layer of [...(m.getStyle()?.layers ?? [])]) {

@@ -199,6 +199,15 @@
                                 >
                                     <IconMap :size='14' />&nbsp;{{ shown[job.id] ? "Hide" : "Show" }}
                                 </button>
+                                <button
+                                    v-if='hasMapData(job)'
+                                    class='btn btn-sm'
+                                    :class='{ "btn-primary": compare?.jobId === job.id }'
+                                    title='Turn the area into a slider: capture on one side, base map on the other'
+                                    @click='toggleCompare(job)'
+                                >
+                                    <IconArrowsHorizontal :size='14' />&nbsp;Compare
+                                </button>
                                 <a
                                     class='btn btn-sm'
                                     :href='job.links.package'
@@ -220,6 +229,24 @@
                             >
                                 <IconTrash :size='14' />
                             </button>
+                        </div>
+                        <div
+                            v-if='compare?.jobId === job.id'
+                            class='mt-2'
+                        >
+                            <input
+                                class='form-range'
+                                type='range'
+                                min='0'
+                                max='100'
+                                aria-label='Capture / base map divider'
+                                :value='Math.round(compare.fraction * 100)'
+                                @input='onCompareInput'
+                            >
+                            <div class='d-flex small text-secondary'>
+                                <span>◀ More base map</span>
+                                <span class='ms-auto'>More capture ▶</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -288,14 +315,17 @@
 <script setup lang='ts'>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import {
-    IconDownload, IconMap, IconMapPin, IconPackage, IconRefresh, IconSquare, IconTrash, IconViewfinder,
+    IconArrowsHorizontal, IconDownload, IconMap, IconMapPin, IconPackage, IconRefresh, IconSquare, IconTrash, IconViewfinder,
 } from '@tabler/icons-vue';
 // Internal reach-in: CloudTAK's standard menu-panel chrome (header, back button), so the panel
 // looks native. Re-verify the path on CloudTAK upgrades (AGENTS.md §4).
 import MenuTemplate from '../../../src/components/CloudTAK/util/MenuTemplate.vue';
 import * as aleph from '../lib/client.ts';
 import { areaKm2, featureAreas, mapViewArea, type AreaCandidate } from '../lib/area.ts';
-import { cancelInteraction, drawRectangle, hideJob, isShown, pickPoint, showDraft, showJob, zoomTo } from '../lib/map-layers.ts';
+import {
+    cancelInteraction, drawRectangle, hasMapData, hideJob, isShown, pickPoint, showDraft, showJob, zoomTo,
+} from '../lib/map-layers.ts';
+import { onSwipeChange, setSwipeFraction, startSwipe, stopSwipe, swipeState, type SwipeState } from '../lib/swipe.ts';
 import type { AlephInfo, Estimate, Job, LayerName, LayerProgress, Polygon, PointResult } from '../lib/types.ts';
 
 const LAYER_LABELS: Record<LayerName, string> = {
@@ -324,6 +354,10 @@ const drawing = ref(false);
 const picking = ref(false);
 const submitting = ref(false);
 const pointResult = ref<PointResult | null>(null);
+const compare = ref<SwipeState | null>(swipeState());
+const unsubscribeSwipe = onSwipeChange((state) => {
+    compare.value = state;
+});
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const areaKm = computed(() => (area.value ? areaKm2(area.value) : 0));
@@ -453,6 +487,24 @@ function toggleOnMap(job: Job): void {
     }
 }
 
+/** The capture's area becomes a slider: capture west of the divider, base map east of it. */
+function toggleCompare(job: Job): void {
+    if (compare.value?.jobId === job.id) {
+        stopSwipe();
+        return;
+    }
+    if (!shown[job.id]) {
+        showJob(job, info.value?.imagery?.name);
+        shown[job.id] = true;
+    }
+    zoomTo(job.area);
+    startSwipe(job, info.value?.imagery?.name);
+}
+
+function onCompareInput(event: Event): void {
+    setSwipeFraction(Number((event.target as HTMLInputElement).value) / 100);
+}
+
 async function retry(job: Job): Promise<void> {
     try {
         await aleph.retryJob(job.id);
@@ -510,7 +562,9 @@ onMounted(async () => {
     }, POLL_MS);
 });
 
+// The compare outlives the panel (like shown captures); its map handle keeps working.
 onUnmounted(() => {
+    unsubscribeSwipe();
     if (timer) clearInterval(timer);
     cancelInteraction();
     showDraft(null);
