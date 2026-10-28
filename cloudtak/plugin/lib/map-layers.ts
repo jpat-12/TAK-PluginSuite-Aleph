@@ -10,17 +10,26 @@ import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, MapMouseEve
 import { pluginApi } from './plugin-api.ts';
 import { bboxPolygon } from './area.ts';
 import { stopSwipe } from './swipe.ts';
+import { legendAdd, legendClear, legendRemove } from './legend.ts';
 import type { Job, Polygon } from './types.ts';
 
 const PREFIX = 'plugin-aleph-';
 const DRAFT = `${PREFIX}draft`;
 
-// Same palette as the KMZ in the package (aleph_tak/formats/kml.py), so web and TAK agree.
-const LINE_COLORS: [string, string][] = [
-    ['roads_major', '#ffd700'], ['roads_minor', '#ffffff'], ['trails', '#a56a2a'],
-    ['railways', '#555555'], ['power', '#ff0000'], ['waterways', '#3399ff'], ['water', '#3399ff'],
-    ['buildings', '#ff8000'], ['aero', '#ff00ff'],
+// Same palette and names as the KMZ in the package (aleph_tak/formats/kml.py STYLES), so web,
+// TAK and the legend (legend.ts) agree. `area` = drawn as a filled polygon.
+export const OSM_STYLES: { key: string; label: string; color: string; area: boolean }[] = [
+    { key: 'roads_major', label: 'Major roads', color: '#ffd700', area: false },
+    { key: 'roads_minor', label: 'Local roads', color: '#ffffff', area: false },
+    { key: 'trails', label: 'Trails & tracks', color: '#a56a2a', area: false },
+    { key: 'railways', label: 'Railways', color: '#555555', area: false },
+    { key: 'power', label: 'Power lines', color: '#ff0000', area: false },
+    { key: 'waterways', label: 'Waterways', color: '#3399ff', area: false },
+    { key: 'water', label: 'Water', color: '#3399ff', area: true },
+    { key: 'buildings', label: 'Buildings', color: '#ff8000', area: true },
+    { key: 'aero', label: 'Airfields & helipads', color: '#ff00ff', area: true },
 ];
+const LINE_COLORS = OSM_STYLES.map((style) => [style.key, style.color]);
 
 function map(): MapLibreMap {
     return pluginApi().map;
@@ -94,10 +103,12 @@ export function showJob(job: Job, imagerySource = 'open-data imagery'): void {
     m.addSource(`${id}-area`, { type: 'geojson', data: links.area });
     addLayer({ id: `${id}-area`, type: 'line', source: `${id}-area`,
         paint: { 'line-color': '#06b6d4', 'line-width': 2, 'line-dasharray': [2, 2] } }, false);
+    legendAdd(job, imagerySource);
 }
 
 export function hideJob(jobId: string): void {
     stopSwipe(jobId);
+    legendRemove(jobId);
     const m = map();
     const prefix = `${PREFIX}${jobId}`;
     for (const layer of [...(m.getStyle().layers ?? [])]) {
@@ -118,6 +129,7 @@ export function zoomTo(polygon: Polygon): void {
 /** Everything this plugin ever put on the map. Safe when the map isn't loaded yet. */
 export function removeAll(): void {
     stopSwipe();
+    legendClear();
     try {
         const m = map();
         for (const layer of [...(m.getStyle()?.layers ?? [])]) {

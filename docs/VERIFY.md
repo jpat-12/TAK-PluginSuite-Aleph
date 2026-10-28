@@ -24,7 +24,9 @@ cd ../atak && ./gradlew assembleCivDebug testCivDebugUnitTest                # A
 5. Settings → Refresh App → menu → **Aleph Capture** → Draw box over a ~2 km² Illinois area →
    estimate shows → Capture → progress reaches **complete** in ~1–2 min.
 6. **Show** → NAIP imagery, OSM lines and the dashed outline appear over the basemap; CoT
-   markers stay on top. Point lookup returns an elevation.
+   markers stay on top. A legend appears bottom-left (above the GPS panel) listing the
+   imagery and only the OSM categories in the capture; its header collapses it; **Hide** removes it.
+   Point lookup returns an elevation.
    **Compare** → the area becomes a slider: capture west of the divider, live basemap east of it.
    Drag the handle (or the panel's range) both ways, pan/rotate/pitch — the two halves stay
    aligned; the attribution still lists the capture's sources. **Compare** again (or **Hide**)

@@ -78,7 +78,8 @@ infratak/                        infra-TAK integration (never edits infra-TAK's 
   heal.sh, systemd/              service unit + path unit that re-applies integration after infra-TAK rewrites
 cloudtak/                        CloudTAK plugin
   plugin/                        web half → api/web/plugins/aleph/ (Vue 3 panel, map previews,
-                                 capture-vs-basemap swipe slider in lib/swipe.ts, point lookup)
+                                 capture-vs-basemap swipe slider in lib/swipe.ts, map legend in
+                                 lib/legend.ts, point lookup)
   server/plugin-aleph.ts         server half → api/routes/: relays JSON with a server-side proxy token
   install.sh                     copies both halves, merges ALEPH_URL/TOKEN into api/.env, rebuilds
   check-in-cloudtak.mjs          runs CloudTAK's own lint + vue-tsc against the plugin
