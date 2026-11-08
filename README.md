@@ -64,7 +64,7 @@ service/                         the capture service (Python ≥3.10, Flask + wa
     area.py                      area/layer validation and the pre-submit size estimate
     sources.py                   open-data endpoints + attribution (the Google replacements)
     net.py                       per-tile fault-tolerant downloading (one USGS 502 ≠ lost layer)
-    point.py                     point lookup: elevation, nearest address, nearby photos
+    point.py                     point lookup: elevation, street address, nearest place, nearby photos
     auth.py                      bearer tokens (hashed), proxy users, HMAC signed URLs, SSO signature
     config.py                    settings + secrets in the data dir, forward-compatible loading
     layers/                      imagery · elevation · osm · photos — each resumable, run(ctx) → result
@@ -109,7 +109,7 @@ atak/                            ATAK plugin (Java, ATAK-CIV 5.6 SDK)
 | Feature (plan section) | State | Notes |
 |---|---|---|
 | Phase 0 — open-data sources replace Google | ✅ | Live capture of 1.88 km² at Lake Springfield, IL: 49 NAIP tiles (0.92 m), DTED2 cell 170–178 m, 239 OSM features, 1.26 MB package in 83 s. **Gate met.** |
-| Imagery: USGS NAIP → MBTiles (+ optional COG) | ✅ | Pluggable: admin can set a custom XYZ/ArcGIS source CAP is licensed for |
+| Imagery → MBTiles (+ optional COG) | ✅ | Users pick the source per capture: USGS NAIP (default), USGS Imagery Only (cached, ≤ z16), Sentinel-2 cloudless 2016 (EOX, worldwide 10 m). Admins add more (e.g. state orthoimagery) under *Extra imagery sources*. The two new built-ins aren't tested against the live services yet |
 | Elevation: AWS Terrain Tiles → DTED1/2 + GeoTIFF | ✅ | Byte-exact DTED writer, tested both in Python and against the Java reader |
 | OSM via Geofabrik → KMZ + GeoJSON | ✅ | Ways and named POIs; lines clipped to the area |
 | OSM multipolygon relations (big lakes with islands, large landuse) | ⬜ Deferred | v1 reads closed ways only |

@@ -1,4 +1,4 @@
-"""Point mode: tap a spot, get its elevation, nearest address, and nearby street-level photos.
+"""Point mode: tap a spot, get its elevation, nearest place, street address, and nearby street-level photos.
 
 Each part degrades on its own — a geocoder outage still returns the elevation.
 """
@@ -14,6 +14,7 @@ from .layers.elevation import decode_terrarium
 
 ELEVATION_ZOOM = 14
 PHOTO_RADIUS_M = 150
+ADDRESS_CANDIDATES = 10
 
 
 def elevation_at(client, lat, lon):
@@ -41,6 +42,30 @@ def nearby_photos(client, token, lat, lon, limit=5):
     return sorted(result, key=lambda p: p["distance_m"])[:limit]
 
 
+def format_street_address(parts):
+    """"123 Main St, Springfield, Illinois 62701" from Photon's parts; missing parts are skipped."""
+    street = " ".join(p for p in (parts.get("housenumber"), parts.get("street")) if p)
+    region = " ".join(p for p in (parts.get("state"), parts.get("postcode")) if p)
+    return ", ".join(p for p in (street, parts.get("city"), region) if p)
+
+
+def street_address(client, settings, lat, lon):
+    """The nearest house address (house number + street), else the nearest street, else None.
+
+    One reverse request for several house-level candidates: Photon versions that ignore the layer
+    filter still return nearby features, and we pick the closest one that has a street.
+    """
+    found = places.geocode(client, at=(lat, lon), limit=ADDRESS_CANDIDATES, layer="house",
+                           endpoint=settings["geocoder_url"])
+    with_street = sorted((f for f in found if f["address"].get("street")), key=lambda f: f.get("distance_m", 0))
+    exact = [f for f in with_street if f["address"].get("housenumber")]
+    best = (exact or with_street or [None])[0]
+    if best is None:
+        return None
+    return dict(label=format_street_address(best["address"]), exact=bool(exact), distance_m=best.get("distance_m"),
+                **best["address"])
+
+
 def lookup(client, settings, lat, lon):
     result = dict(lat=lat, lon=lon, errors={})
     try:
@@ -55,6 +80,11 @@ def lookup(client, settings, lat, lon):
     except Exception as error:
         result["address"] = None
         result["errors"]["address"] = str(error)
+    try:
+        result["street_address"] = street_address(client, settings, lat, lon)
+    except Exception as error:
+        result["street_address"] = None
+        result["errors"]["street_address"] = str(error)
     token = settings["photos"]["mapillary_token"]
     if token:
         try:

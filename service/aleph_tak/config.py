@@ -31,6 +31,10 @@ DEFAULTS = {
         "extra_formats": [],
         # Only used when source == "custom": an imagery service CAP is licensed to cache.
         "custom": {"kind": "xyz", "url": "", "attribution": "", "max_zoom": 19},
+        # More sources users can pick per capture (e.g. a state's orthoimagery), each
+        # {id, name, kind: xyz|arcgis-export, url, attribution, max_zoom, coverage, resolution,
+        #  updated, licence, description}. Only add sources whose licence allows offline use.
+        "extra_sources": [],
     },
     "elevation": {"zoom": 13, "dted_level": 2},
     "osm": {"enabled": True},

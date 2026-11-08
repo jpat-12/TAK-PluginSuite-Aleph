@@ -27,7 +27,11 @@ cd ../atak && ./gradlew assembleCivDebug testCivDebugUnitTest                # A
    the lines on top of the imagery (in either order); **Photos** adds the photo dots. CoT markers
    stay on top. Switching every dataset off removes the capture from the map. A legend appears
    bottom-left (above the GPS panel) listing only the datasets switched on, and only the OSM
-   categories in the capture; its header collapses it. Point lookup returns an elevation.
+   categories in the capture; its header collapses it. Point lookup returns an elevation and,
+   in a town, a street address ("413 North 5th Street, Springfield, Illinois 62702 · 12 m away").
+   Before capturing: each layer shows what it downloads and its estimated size; pick each imagery
+   source in turn, capture a small area with it, and check the tiles come back (NAIP slowest; USGS
+   Imagery Only stops at z16; Sentinel-2 cloudless at z14).
    **Compare** → the area becomes a slider: capture west of the divider, live basemap east of it.
    Drag the handle (or the panel's range) both ways, pan/rotate/pitch — the two halves stay
    aligned; the attribution still lists the capture's sources. Toggling a dataset while comparing

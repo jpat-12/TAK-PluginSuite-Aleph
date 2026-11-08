@@ -15,10 +15,23 @@ export interface AlephInfo {
     api: number;
     layers: LayerName[];
     max_area_km2: number;
-    imagery: { name: string; coverage: string; max_zoom: number } | null;
+    imagery: { name: string; coverage: string; max_zoom: number } | null;     // the default source
+    imagery_sources?: ImagerySource[];                                          // service 0.1.4+
     default_imagery_zoom: number;
     dted_level: number;
     job_ttl_hours: number;
+}
+
+export interface ImagerySource {
+    id: string;
+    default: boolean;
+    name: string;
+    coverage: string;
+    max_zoom: number;
+    resolution: string;
+    updated: string;
+    licence: string;
+    description: string;
 }
 
 export interface Estimate {
@@ -27,7 +40,7 @@ export interface Estimate {
     seconds: number;
     allowed: boolean;
     max_area_km2: number;
-    layers: Partial<Record<LayerName, { bytes: number; seconds: number; tiles?: number; note?: string }>>;
+    layers: Partial<Record<LayerName, { bytes: number; seconds: number; tiles?: number; note?: string; source?: string }>>;
 }
 
 export interface LayerProgress {
@@ -73,6 +86,8 @@ export interface PointResult {
     lon: number;
     elevation_m: number | null;
     address: { label: string; distance_m?: number } | null;
+    // Nearest house address; `exact` false = only the street is known there. Service 0.1.4+.
+    street_address?: { label: string; exact: boolean; distance_m?: number | null } | null;
     photos: Array<{ id: string; distance_m: number; thumb_url: string | null; image_url: string | null; captured_at: number | null }> | null;
     errors: Record<string, string>;
     attribution: string[];

@@ -148,7 +148,7 @@ def build_cog(ctx, root, plan, out_path):
 
 
 def run(ctx):
-    source = sources.imagery_source(ctx.settings)
+    source = sources.imagery_source(ctx.settings, ctx.options.get("imagery_source"))  # absent on jobs from ≤0.1.4
     zoom = min(ctx.options["imagery_zoom"], source["max_zoom"])
     root = ctx.work("imagery") / "tiles"
     plan, missing, failures = download(ctx, source, zoom, root)

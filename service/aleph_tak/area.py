@@ -84,8 +84,13 @@ def estimate(polygon, layers, options, settings):
         size = count * JPEG_TILE_BYTES * OVERVIEW_FACTOR
         if "geotiff" in options["imagery_formats"]:
             size += count * COG_TILE_BYTES * OVERVIEW_FACTOR
-        # USGS NAIP renders each tile on request (~1–3 s measured) and is fetched 4 at a time.
-        result["layers"]["imagery"] = dict(tiles=count, zoom=zoom, bytes=int(size), seconds=math.ceil(count * 2.0 / 4))
+        # USGS NAIP renders each tile on request (~1–3 s measured) and is fetched 4 at a time;
+        # pre-cut tile caches answer in a fraction of that, 8 at a time.
+        from . import sources
+        source = sources.imagery_source(settings, options.get("imagery_source"))
+        per_tile, workers = (2.0, 4) if source["kind"] == "arcgis-export" else (0.3, 8)
+        result["layers"]["imagery"] = dict(tiles=count, zoom=zoom, bytes=int(size), seconds=math.ceil(count * per_tile / workers),
+                                           source=source["name"])
     if "elevation" in layers:
         south, west, north, east = extent(polygon)
         lat_step, lon_step = post_spacing(options["dted_level"], (south + north) / 2)

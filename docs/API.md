@@ -32,25 +32,35 @@ Errors are `{"error": "message for the operator"}` with a 4xx/5xx status.
 ```json
 {"service": "aleph-tak", "version": "0.1.0", "api": 1,
  "layers": ["imagery", "elevation", "osm"],            // what this server can capture now
- "max_area_km2": 25, "imagery": {"name": "USGS NAIP (public domain)", "coverage": "Contiguous United States", "max_zoom": 18},
+ "max_area_km2": 25,
+ "imagery": {"name": "USGS NAIP aerial", "coverage": "Contiguous United States", "max_zoom": 18, …},   // the default source
+ "imagery_sources": [                                  // every source a capture may pick (0.1.4+)
+   {"id": "usgs-naip", "default": true, "name": "USGS NAIP aerial", "coverage": "Contiguous United States",
+    "max_zoom": 18, "resolution": "0.6–1 m", "updated": "Flown every 2–3 years", "licence": "Public domain",
+    "description": "Aerial photos flown for USDA. …"},
+   {"id": "usgs-imagery-only", …}, {"id": "eox-s2cloudless-2016", …}, …admin-added sources],
  "default_imagery_zoom": 17, "dted_level": 2, "job_ttl_hours": 72, "point_lookup": true}
 ```
-`photos` appears only when an admin has set a Mapillary token.
+`photos` appears only when an admin has set a Mapillary token. Built-in sources: USGS NAIP
+(0.6–1 m, lower 48, slow), USGS Imagery Only (cached NAIP, ≤ z16, fast), Sentinel-2 cloudless
+2016 by EOX (10 m, worldwide, ≤ z14, CC BY). Admins add more (e.g. state orthoimagery) in
+/admin → *Extra imagery sources*; only sources licensed for offline use belong there.
 
 ### Capture request (body of `/estimate` and `/jobs`)
 ```json
 {"area": {"type": "Polygon", "coordinates": [[[-89.62, 39.70], [-89.6035, 39.70], [-89.6035, 39.712], [-89.62, 39.712], [-89.62, 39.70]]]},
  "layers": ["imagery", "elevation", "osm"],
  "name": "Lake Springfield sector 3",
- "options": {"imagery_zoom": 17, "dted_level": 2, "imagery_formats": ["mbtiles"]}}
+ "options": {"imagery_source": "usgs-naip", "imagery_zoom": 17, "dted_level": 2, "imagery_formats": ["mbtiles"]}}
 ```
 - `area`: GeoJSON Polygon or Feature (outer ring used; ≤ 1000 vertices, non-self-intersecting),
   or a `[west, south, east, north]` bbox. Must be ≤ `max_area_km2`; its bounding box ≤ 4× that.
 - `layers`: subset of `info.layers` (default: all available). `options` are all optional:
-  `imagery_zoom` 12…source max, `dted_level` 1|2, `imagery_formats` adds `"geotiff"` (lossless COG, ~8× bigger).
+  `imagery_source` an `info.imagery_sources[].id` (default: the server's default),
+  `imagery_zoom` 12…that source's `max_zoom` (400 if finer), `dted_level` 1|2, `imagery_formats` adds `"geotiff"` (lossless COG, ~8× bigger).
 
 ### `POST /api/v1/estimate`
-`{"area_km2": 1.883, "bytes": 1338323, "seconds": 65, "allowed": true, "max_area_km2": 25, "layers": {"imagery": {"tiles": 49, "zoom": 17, "bytes": …, "seconds": …}, …}}`
+`{"area_km2": 1.883, "bytes": 1338323, "seconds": 65, "allowed": true, "max_area_km2": 25, "layers": {"imagery": {"tiles": 49, "zoom": 17, "source": "USGS NAIP aerial", "bytes": …, "seconds": …}, …}}`
 Rough (±30%); clients show it before submitting.
 
 ### `POST /api/v1/jobs` → 201 + job record
@@ -96,8 +106,12 @@ resumable downloads; `X-Content-SHA256` header. Layout: [`PACKAGE-FORMAT`](#pack
 All send `Access-Control-Allow-Origin: *` (the signature is the authorization).
 
 ### `GET /api/v1/point?lat=&lon=`
-`{"lat", "lon", "elevation_m", "address": {"label", "distance_m", …} | null, "photos": [{"id", "distance_m", "thumb_url", "image_url", "captured_at"}] | null, "errors": {part: message}, "attribution": [...]}`
+`{"lat", "lon", "elevation_m", "address": {"label", "distance_m", …} | null,
+ "street_address": {"label": "413 North 5th Street, Springfield, Illinois 62702", "exact": true, "distance_m",
+                    "housenumber", "street", "city", "state", "postcode", "country"} | null, "photos": [{"id", "distance_m", "thumb_url", "image_url", "captured_at"}] | null, "errors": {part: message}, "attribution": [...]}`
 Each part degrades on its own; `photos` is `null` when the server has no Mapillary token.
+`address` is the nearest named place; `street_address` (0.1.4+) the nearest house address from
+OpenStreetMap, or just the street (`exact: false`) when no house number is mapped nearby.
 
 ## Package format
 

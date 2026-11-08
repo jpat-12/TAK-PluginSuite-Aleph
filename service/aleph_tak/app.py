@@ -40,17 +40,23 @@ def parse_options(body, settings):
     if not isinstance(raw, dict):
         raise ValueError("options must be an object.")
     imagery = settings["imagery"]
-    zoom = raw.get("imagery_zoom", imagery["zoom"])
-    max_zoom = min(imagery["max_zoom"], sources.imagery_source(settings)["max_zoom"]) if "imagery" in available_layers(settings) else 18
+    source_id = raw.get("imagery_source", imagery["source"])
+    if "imagery" in available_layers(settings):
+        if not isinstance(source_id, str) or source_id not in sources.imagery_sources(settings):
+            raise ValueError(f"options.imagery_source: one of {', '.join(sources.imagery_sources(settings))}.")
+        max_zoom = min(imagery["max_zoom"], sources.imagery_source(settings, source_id)["max_zoom"])
+    else:
+        max_zoom = 18
+    zoom = raw.get("imagery_zoom", min(imagery["zoom"], max_zoom))
     if type(zoom) is not int or not 12 <= zoom <= max_zoom:
-        raise ValueError(f"options.imagery_zoom: whole number 12–{max_zoom}.")
+        raise ValueError(f"options.imagery_zoom: whole number 12–{max_zoom} for this imagery source.")
     formats = raw.get("imagery_formats", ["mbtiles"] + list(imagery["extra_formats"]))
     if not isinstance(formats, list) or not set(formats) <= {"mbtiles", "geotiff"}:
         raise ValueError("options.imagery_formats: any of mbtiles, geotiff.")
     level = raw.get("dted_level", settings["elevation"]["dted_level"])
     if level not in (1, 2):
         raise ValueError("options.dted_level: 1 or 2.")
-    return dict(imagery_zoom=zoom, imagery_formats=sorted(set(formats) | {"mbtiles"}),
+    return dict(imagery_source=source_id, imagery_zoom=zoom, imagery_formats=sorted(set(formats) | {"mbtiles"}),
                 elevation_zoom=int(settings["elevation"]["zoom"]), dted_level=level)
 
 
@@ -149,15 +155,18 @@ def create_app(data_dir=None, *, start_runner=True):
     @app.get("/api/v1/info")
     def info():
         settings = config.settings
+        public = ("name", "coverage", "max_zoom", "resolution", "updated", "licence", "description")
         try:
-            imagery = sources.imagery_source(settings)
-            imagery = dict(name=imagery["name"], coverage=imagery["coverage"], max_zoom=imagery["max_zoom"])
+            imagery = {k: sources.imagery_source(settings)[k] for k in public}
+            choices = [dict({k: src[k] for k in public}, id=key, default=key == settings["imagery"]["source"])
+                       for key, src in sources.imagery_sources(settings).items()]
         except ValueError:
-            imagery = None
+            imagery, choices = None, []
         return jsonify(
             service="aleph-tak", version=__version__, api=API_VERSION,
             layers=available_layers(settings), max_area_km2=settings["max_area_km2"],
-            imagery=imagery, default_imagery_zoom=settings["imagery"]["zoom"],
+            # `imagery` is the default source (what ≤0.1.4 clients read); `imagery_sources` the full choice.
+            imagery=imagery, imagery_sources=choices, default_imagery_zoom=settings["imagery"]["zoom"],
             dted_level=settings["elevation"]["dted_level"], job_ttl_hours=settings["job_ttl_hours"],
             point_lookup=True,
         )

@@ -14,7 +14,7 @@ export interface CaptureRequest {
     area: Polygon;
     layers: LayerName[];
     name?: string;
-    options?: { imagery_zoom?: number; dted_level?: 1 | 2 };
+    options?: { imagery_source?: string; imagery_zoom?: number; dted_level?: 1 | 2 };
 }
 
 export async function info(): Promise<AlephInfo> {

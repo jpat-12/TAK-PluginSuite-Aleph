@@ -10,7 +10,7 @@ from .osm import POI_KEYS
 GEOCODER = "https://photon.komoot.io"
 
 
-def geocode(client, *, query=None, at=None, limit=5, street=False, endpoint=GEOCODER):
+def geocode(client, *, query=None, at=None, limit=5, street=False, layer=None, endpoint=GEOCODER):
     number(limit, "limit", 1, 50, whole=True)
     endpoint = endpoint.rstrip("/")
     address = urlsplit(endpoint)
@@ -26,6 +26,8 @@ def geocode(client, *, query=None, at=None, limit=5, street=False, endpoint=GEOC
         path = "/api/"
     else:
         params["lat"], params["lon"] = point(at)
+        if layer:
+            params["layer"] = layer  # e.g. "house"; Photon versions without layer filtering ignore it
         path = "/reverse/"
     try:
         data = json.loads(client.get(url(endpoint + path, **params), user_agent=APP_AGENT))
@@ -48,7 +50,11 @@ def geocode(client, *, query=None, at=None, limit=5, street=False, endpoint=GEOC
             name, props.get("housenumber"), props.get("city"),
             props.get("state"), props.get("country"),
         ) if v))
-        result = dict(id=identity, name=name, label=label, lat=lat, lon=lon,
+        # Street-address parts for point lookup; small places come back with town/village/locality, not city.
+        props.setdefault("city", props.get("town") or props.get("village") or props.get("locality"))
+        parts = {key: str(props[key]) for key in ("housenumber", "street", "postcode", "city", "state", "country")
+                 if props.get(key)}
+        result = dict(id=identity, name=name, label=label, lat=lat, lon=lon, address=parts,
                       category=f"{props.get('osm_key', 'place')}:{props.get('osm_value', 'unknown')}",
                       source="OpenStreetMap", source_url=f"https://www.openstreetmap.org/{identity}")
         if at is not None:

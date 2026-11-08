@@ -56,12 +56,13 @@ button{background:var(--accent);color:#001;border:0;border-radius:6px;padding:8p
 <div><label>Public URL (how clients reach this service)</label><input name="public_url" value="{{ s.public_url }}" placeholder="https://aleph.example.org"></div>
 <div><label>Max area per capture (km²)</label><input name="max_area_km2" type="number" step="0.5" min="0.5" value="{{ s.max_area_km2 }}"></div>
 <div><label>Delete captures after (hours)</label><input name="job_ttl_hours" type="number" min="1" value="{{ s.job_ttl_hours }}"></div>
-<div><label>Imagery source</label><select name="imagery.source">{% for key, src in imagery_sources.items() %}<option value="{{ key }}" {{ 'selected' if s.imagery.source == key }}>{{ src.name }}</option>{% endfor %}<option value="custom" {{ 'selected' if s.imagery.source == 'custom' }}>Custom (licensed) source</option></select></div>
+<div><label>Default imagery source (users can pick any of them per capture)</label><select name="imagery.source">{% for key, src in imagery_sources.items() %}<option value="{{ key }}" {{ 'selected' if s.imagery.source == key }}>{{ src.name }} — {{ src.resolution }}, {{ src.coverage }}</option>{% endfor %}{% if 'custom' not in imagery_sources %}<option value="custom" {{ 'selected' if s.imagery.source == 'custom' }}>Custom (licensed) source</option>{% endif %}</select></div>
 <div><label>Default imagery zoom (17 ≈ 1 m, 18 ≈ 0.5 m)</label><input name="imagery.zoom" type="number" min="12" max="20" value="{{ s.imagery.zoom }}"></div>
 <div><label>Also include lossless GeoTIFF (≈8× larger)</label><select name="imagery.geotiff"><option value="0">No</option><option value="1" {{ 'selected' if 'geotiff' in s.imagery.extra_formats }}>Yes</option></select></div>
 <div><label>Custom imagery URL ({z}/{x}/{y} template or ArcGIS exportImage)</label><input name="imagery.custom.url" value="{{ s.imagery.custom.url }}"></div>
 <div><label>Custom imagery kind</label><select name="imagery.custom.kind"><option value="xyz">XYZ tiles</option><option value="arcgis-export" {{ 'selected' if s.imagery.custom.kind == 'arcgis-export' }}>ArcGIS exportImage</option></select></div>
 <div><label>Custom imagery attribution</label><input name="imagery.custom.attribution" value="{{ s.imagery.custom.attribution }}"></div>
+<div style="grid-column:1/-1"><label>Extra imagery sources users can pick (JSON list; e.g. your state's orthoimagery — only sources licensed for offline use). Each: {"id", "name", "kind": "xyz"|"arcgis-export", "url", "attribution", "max_zoom", "coverage", "resolution", "updated", "licence", "description"}</label><textarea name="imagery.extra_sources" rows="4" style="width:100%;font-family:monospace">{{ s.imagery.extra_sources | tojson(indent=1) }}</textarea></div>
 <div><label>DTED level</label><select name="elevation.dted_level"><option value="2">2 (≈30 m posts)</option><option value="1" {{ 'selected' if s.elevation.dted_level == 1 }}>1 (≈90 m posts)</option></select></div>
 <div><label>OSM features</label><select name="osm.enabled"><option value="1">On</option><option value="0" {{ 'selected' if not s.osm.enabled }}>Off</option></select></div>
 <div><label>Mapillary client token (enables photos)</label><input name="photos.mapillary_token" value="{{ s.photos.mapillary_token }}" autocomplete="off"></div>
@@ -97,6 +98,19 @@ def _require_admin():
     return None
 
 
+def _extra_sources(raw):
+    """The admin's JSON list of extra imagery sources, checked before it's saved."""
+    from .sources import IMAGERY, imagery_sources
+    sources = json.loads(raw or "[]")
+    if not isinstance(sources, list) or not all(isinstance(s, dict) and s.get("url") and s.get("id") for s in sources):
+        raise ValueError("extra imagery sources must be a JSON list of objects, each with an id and a url")
+    ids = [str(s["id"]) for s in sources]
+    if len(set(ids)) != len(ids) or set(ids) & (set(IMAGERY) | {"custom"}):
+        raise ValueError("extra imagery source ids must be unique and differ from the built-in ones")
+    imagery_sources({"imagery": {"extra_sources": sources}})  # rejects a bad kind
+    return sources
+
+
 def _coerce(form):
     """Flat dotted form fields → the nested settings shape, with types restored."""
     current = _ext()["config"].settings
@@ -109,7 +123,7 @@ def _coerce(form):
         node[path[-1]] = value
 
     for field, raw in form.items():
-        if field in ("csrf", "imagery.geotiff"):
+        if field in ("csrf", "imagery.geotiff", "imagery.extra_sources"):
             continue
         path = field.split(".")
         if path[0] not in EDITABLE:
@@ -127,6 +141,8 @@ def _coerce(form):
             value = raw.strip()
         put(path, value)
     values.setdefault("imagery", {})["extra_formats"] = ["geotiff"] if form.get("imagery.geotiff") == "1" else []
+    if "imagery.extra_sources" in form:
+        values["imagery"]["extra_sources"] = _extra_sources(form["imagery.extra_sources"])
     if values.get("public_url"):
         values["public_url"] = values["public_url"].rstrip("/")
     return values
@@ -136,12 +152,12 @@ def register(app):
     @app.get("/admin")
     def admin_page():
         ext = _ext()
-        from .sources import IMAGERY
+        from .sources import imagery_sources
         return render_template_string(
             PAGE, version=__version__, user=session.get("admin_user"), csrf=_csrf(),
             has_password=bool(ext["config"].secrets.get("admin_password_hash")),
             tokens=ext["tokens"].public(), jobs=ext["store"].list(), s=ext["config"].settings,
-            imagery_sources=IMAGERY, message=session.pop("admin_message", None), error=session.pop("admin_error", None))
+            imagery_sources=imagery_sources(ext["config"].settings), message=session.pop("admin_message", None), error=session.pop("admin_error", None))
 
     @app.post("/admin/login")
     def admin_login():

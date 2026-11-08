@@ -63,39 +63,75 @@
                 <div class='subheader mb-1 mt-3'>
                     2 · Layers
                 </div>
-                <label
+                <div
                     v-for='layer in info.layers'
                     :key='layer'
-                    class='form-check mb-1'
+                    class='mb-2'
                 >
-                    <input
-                        v-model='layers'
-                        class='form-check-input'
-                        type='checkbox'
-                        :value='layer'
-                        @change='refreshEstimate'
-                    >
-                    <span class='form-check-label'>{{ LAYER_LABELS[layer] }}</span>
-                </label>
-                <div
-                    v-if='layers.includes("imagery") && info.imagery'
-                    class='d-flex align-items-center gap-2 small mb-2'
-                >
-                    <span class='text-secondary'>Detail</span>
-                    <select
-                        v-model.number='zoom'
-                        class='form-select form-select-sm w-auto'
-                        @change='refreshEstimate'
-                    >
-                        <option
-                            v-for='z in zoomChoices'
-                            :key='z'
-                            :value='z'
+                    <label class='form-check mb-0'>
+                        <input
+                            v-model='layers'
+                            class='form-check-input'
+                            type='checkbox'
+                            :value='layer'
+                            @change='refreshEstimate'
                         >
-                            z{{ z }} · ~{{ resolution(z) }} m
-                        </option>
-                    </select>
-                    <span class='text-secondary'>{{ info.imagery.name }}</span>
+                        <span class='form-check-label d-flex'>
+                            <span>{{ LAYER_LABELS[layer] }}</span>
+                            <span
+                                v-if='layers.includes(layer) && estimateResult?.layers[layer]'
+                                class='ms-auto text-secondary small'
+                            >≈ {{ mb(estimateResult.layers[layer]?.bytes ?? 0) }}</span>
+                        </span>
+                    </label>
+                    <div class='small text-secondary ms-4'>
+                        {{ layerDescription(layer) }}
+                    </div>
+                    <div
+                        v-if='layer === "imagery" && layers.includes("imagery") && imagerySources.length > 1'
+                        class='ms-4 mt-1 mb-1'
+                    >
+                        <select
+                            v-model='imagerySource'
+                            class='form-select form-select-sm'
+                            aria-label='Imagery source'
+                            @change='onSourceChange'
+                        >
+                            <option
+                                v-for='source in imagerySources'
+                                :key='source.id'
+                                :value='source.id'
+                            >
+                                {{ source.name }} · {{ source.resolution }}
+                            </option>
+                        </select>
+                        <div
+                            v-if='selectedSource'
+                            class='small text-secondary mt-1'
+                        >
+                            {{ selectedSource.description }}
+                            <br>{{ selectedSource.coverage }} · {{ selectedSource.updated }} · {{ selectedSource.licence }}
+                        </div>
+                    </div>
+                    <div
+                        v-if='layer === "imagery" && layers.includes("imagery") && info.imagery'
+                        class='d-flex align-items-center gap-2 small mb-2 ms-4'
+                    >
+                        <span class='text-secondary'>Detail</span>
+                        <select
+                            v-model.number='zoom'
+                            class='form-select form-select-sm w-auto'
+                            @change='refreshEstimate'
+                        >
+                            <option
+                                v-for='z in zoomChoices'
+                                :key='z'
+                                :value='z'
+                            >
+                                z{{ z }} · ~{{ resolution(z) }} m
+                            </option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- 3. Estimate + submit -->
@@ -302,7 +338,7 @@
                     :class='{ "btn-primary": picking }'
                     @click='lookupPoint'
                 >
-                    <IconMapPin :size='16' />&nbsp;{{ picking ? "Click the map…" : "Tap a spot: elevation, address, photos" }}
+                    <IconMapPin :size='16' />&nbsp;{{ picking ? "Click the map…" : "Tap a spot: elevation, street address, photos" }}
                 </button>
                 <div
                     v-if='pointResult'
@@ -313,6 +349,17 @@
                         <div v-if='pointResult.elevation_m !== null'>
                             Elevation <strong>{{ pointResult.elevation_m }} m</strong>
                             ({{ Math.round(pointResult.elevation_m * 3.28084) }} ft)
+                        </div>
+                        <div
+                            v-if='pointResult.street_address'
+                            class='user-select-all'
+                            :title='pointResult.street_address.exact ? "Nearest mapped house address" : "No house number mapped nearby; nearest street"'
+                        >
+                            <strong>{{ pointResult.street_address.label }}</strong>
+                            <span class='text-secondary'>
+                                {{ pointResult.street_address.exact ? "" : "(street only)" }}
+                                {{ pointResult.street_address.distance_m != null ? `· ${Math.round(pointResult.street_address.distance_m)} m away` : "" }}
+                            </span>
                         </div>
                         <div v-if='pointResult.address'>
                             Near {{ pointResult.address.label }}
@@ -346,7 +393,7 @@
                     </div>
                 </div>
                 <div class='small text-secondary mt-3'>
-                    Aleph {{ info.version }} · open data only: {{ info.imagery?.name ?? "no imagery" }}, AWS Terrain Tiles,
+                    Aleph {{ info.version }} · open data only: {{ selectedSource?.name ?? info.imagery?.name ?? "no imagery" }}, AWS Terrain Tiles,
                     © OpenStreetMap contributors{{ info.layers.includes("photos") ? ", Mapillary (CC BY-SA)" : "" }}.
                 </div>
             </template>
@@ -370,7 +417,7 @@ import {
     setJobDatasets, shownDatasets, showDraft, showJob, zoomTo, type Dataset,
 } from '../lib/map-layers.ts';
 import { onSwipeChange, setSwipeFraction, startSwipe, stopSwipe, swipeState, type SwipeState } from '../lib/swipe.ts';
-import type { AlephInfo, Estimate, Job, LayerName, LayerProgress, Polygon, PointResult } from '../lib/types.ts';
+import type { AlephInfo, Estimate, ImagerySource, Job, LayerName, LayerProgress, Polygon, PointResult } from '../lib/types.ts';
 
 const DATASET_LABELS = Object.fromEntries(DATASETS.map((d) => [d.key, d.label])) as Record<Dataset, string>;
 const LAYER_LABELS: Record<LayerName, string> = {
@@ -410,9 +457,14 @@ const unsubscribeSwipe = onSwipeChange((state) => {
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const areaKm = computed(() => (area.value ? areaKm2(area.value) : 0));
+const imagerySource = ref('');
+// Services before 0.1.4 don't list sources: the list is empty, no picker shows, and they use their default.
+const imagerySources = computed<ImagerySource[]>(() => info.value?.imagery_sources ?? []);
+const selectedSource = computed(() => imagerySources.value.find((s) => s.id === imagerySource.value) ?? null);
 const zoomChoices = computed(() => {
-    const max = info.value?.imagery?.max_zoom ?? 18;
-    return [15, 16, 17, 18, 19].filter((z) => z <= max);
+    const max = selectedSource.value?.max_zoom ?? info.value?.imagery?.max_zoom ?? 18;
+    const low = Math.max(12, max - 4);
+    return Array.from({ length: max - low + 1 }, (_, i) => low + i);
 });
 const canSubmit = computed(() => Boolean(area.value && layers.value.length && !submitting.value
     && (!estimateResult.value || estimateResult.value.allowed)));
@@ -483,7 +535,40 @@ function useCandidate(): void {
 
 function request(): aleph.CaptureRequest | null {
     if (!area.value || !layers.value.length) return null;
-    return { area: area.value, layers: layers.value, name: name.value || undefined, options: { imagery_zoom: zoom.value } };
+    const options: aleph.CaptureRequest['options'] = { imagery_zoom: zoom.value };
+    if (imagerySource.value) options.imagery_source = imagerySource.value;
+    return { area: area.value, layers: layers.value, name: name.value || undefined, options };
+}
+
+/** A new source can't go as fine as the last one: keep the zoom inside its range. */
+function onSourceChange(): void {
+    const choices = zoomChoices.value;
+    if (!choices.includes(zoom.value)) zoom.value = choices[choices.length - 1];
+    void refreshEstimate();
+}
+
+/** What ticking a layer actually downloads, in one line. */
+function layerDescription(layer: LayerName): string {
+    const level = info.value?.dted_level ?? 2;
+    switch (layer) {
+    case 'imagery':
+        return 'Photo imagery of the area as MBTiles (opens in ATAK/WinTAK overlays). Pick the source below.';
+    case 'elevation':
+        return `AWS Terrain Tiles (USGS 3DEP in the US, SRTM elsewhere) → DTED level ${level} cells`
+            + ` (~${level === 2 ? 30 : 90} m posts) + a GeoTIFF; the ATAK/WinTAK plugins merge it into their elevation data.`;
+    case 'osm':
+        return 'OpenStreetMap via Geofabrik: roads, trails, railways, power lines, waterways, lakes, buildings and'
+            + ' airfields → KMZ for TAK (+ GeoJSON for this map).';
+    case 'photos':
+        return 'Mapillary street-level photos taken inside the area (CC BY-SA) → TAK map markers with each photo attached.';
+    }
+    return '';
+}
+
+/** The imagery source a finished capture used (for its preview attribution and legend). */
+function imageryName(job: Job): string | undefined {
+    const used = job.progress.imagery?.stats?.source;
+    return typeof used === 'string' ? used : info.value?.imagery?.name;
 }
 
 async function refreshEstimate(): Promise<void> {
@@ -533,7 +618,7 @@ function isOn(job: Job, dataset: Dataset): boolean {
 function toggleDataset(job: Job, dataset: Dataset): void {
     const current = shown[job.id] ?? [];
     const next = current.includes(dataset) ? current.filter((d) => d !== dataset) : [...current, dataset];
-    setJobDatasets(job, next, info.value?.imagery?.name);
+    setJobDatasets(job, next, imageryName(job));
     shown[job.id] = shownDatasets(job.id);
     if (!current.length && next.length) zoomTo(job.area);
 }
@@ -550,11 +635,11 @@ function toggleCompare(job: Job): void {
         return;
     }
     if (!(shown[job.id] ?? []).some((d) => d !== 'photos')) {
-        showJob(job, info.value?.imagery?.name);       // nothing to compare yet: switch everything on
+        showJob(job, imageryName(job));               // nothing to compare yet: switch everything on
         shown[job.id] = shownDatasets(job.id);
     }
     zoomTo(job.area);
-    startSwipe(job, info.value?.imagery?.name);
+    startSwipe(job, imageryName(job));
 }
 
 function onCompareInput(event: Event): void {
@@ -609,7 +694,9 @@ onMounted(async () => {
         }
         info.value = result;
         layers.value = result.layers.filter((l) => l !== 'photos');
+        imagerySource.value = result.imagery_sources?.find((s) => s.default)?.id ?? '';
         zoom.value = result.default_imagery_zoom;
+        if (!zoomChoices.value.includes(zoom.value)) zoom.value = zoomChoices.value[zoomChoices.value.length - 1];
         candidates.value = await featureAreas();
     } catch (err) {
         error.value = errorText(err);

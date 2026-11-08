@@ -1,5 +1,6 @@
 """The /api/v1 contract (docs/API.md) as clients see it, with capture layers stubbed."""
 
+import json
 import tempfile
 import time
 import unittest
@@ -186,6 +187,46 @@ class APITests(unittest.TestCase):
             csrf = session["csrf"]
         self.client.post("/admin/tokens", data={"name": "x", "role": "client", "csrf": csrf})
         self.assertEqual(len(self.ext["tokens"].items), before + 1)
+
+    def test_imagery_sources_are_listed_and_chosen_per_capture(self):
+        info = self.client.get("/api/v1/info").json
+        ids = [s["id"] for s in info["imagery_sources"]]
+        self.assertEqual(ids[:3], ["usgs-naip", "usgs-imagery-only", "eox-s2cloudless-2016"])
+        self.assertEqual([s["id"] for s in info["imagery_sources"] if s["default"]], ["usgs-naip"])
+        self.assertTrue(all(s["description"] and s["licence"] and s["resolution"] for s in info["imagery_sources"]))
+
+        def create(options):
+            return self.client.post("/api/v1/jobs", json={"area": AREA, "layers": ["imagery"], "options": options},
+                                    headers=self.auth)
+        self.assertEqual(create({"imagery_source": "google"}).status_code, 400)
+        too_fine = create({"imagery_source": "eox-s2cloudless-2016", "imagery_zoom": 17})
+        self.assertEqual(too_fine.status_code, 400)                       # EOX stops at z14
+        self.assertIn("12–14", too_fine.json["error"])
+        job = create({"imagery_source": "eox-s2cloudless-2016", "imagery_zoom": 14}).json
+        self.assertEqual(job["options"]["imagery_source"], "eox-s2cloudless-2016")
+        default = self.submit(layers=("imagery",))
+        self.assertEqual(default["options"]["imagery_source"], "usgs-naip")
+        estimate = self.client.post("/api/v1/estimate", json={"area": AREA, "layers": ["imagery"],
+                                    "options": {"imagery_source": "usgs-imagery-only", "imagery_zoom": 16}}, headers=self.auth).json
+        self.assertEqual(estimate["layers"]["imagery"]["source"], "USGS Imagery Only (cached)")
+
+    def test_admin_adds_extra_imagery_sources(self):
+        key = self.ext["config"].secrets["console_sso_key"]
+        expires = int(time.time()) + 60
+        self.client.get(f"/admin/sso?user=admin&exp={expires}&sig={sso_signature(key, 'admin', expires)}")
+        self.client.get("/admin")
+        with self.client.session_transaction() as session:
+            csrf = session["csrf"]
+        state = [{"id": "il-ortho", "name": "Illinois orthoimagery", "kind": "xyz", "url": "https://example.org/{z}/{x}/{y}.jpg",
+                  "max_zoom": 19, "resolution": "15 cm", "licence": "Public domain"}]
+        self.client.post("/admin/settings", data={"csrf": csrf, "imagery.extra_sources": json.dumps(state)})
+        sources = {s["id"]: s for s in self.client.get("/api/v1/info").json["imagery_sources"]}
+        self.assertEqual(sources["il-ortho"]["name"], "Illinois orthoimagery")
+        self.assertEqual(sources["il-ortho"]["max_zoom"], 19)
+        # Clashing with a built-in id is refused and leaves the saved list alone.
+        self.client.post("/admin/settings", data={"csrf": csrf, "imagery.extra_sources": json.dumps([dict(state[0], id="usgs-naip")])})
+        self.assertIn("il-ortho", [s["id"] for s in self.client.get("/api/v1/info").json["imagery_sources"]])
+        self.assertEqual(len(self.ext["config"].settings["imagery"]["extra_sources"]), 1)
 
 
 if __name__ == "__main__":
