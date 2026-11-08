@@ -21,6 +21,7 @@ import android.widget.Toast;
 
 import com.atakmap.android.aleph.api.AlephClient;
 import com.atakmap.android.aleph.api.AlephConfig;
+import com.atakmap.android.aleph.api.Describe;
 import com.atakmap.android.aleph.api.Models;
 import com.atakmap.android.aleph.area.AreaMath;
 import com.atakmap.android.aleph.area.AreaPicker;
@@ -38,8 +39,10 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -55,7 +58,7 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
     private static final String TAG = "AlephTAK";
     private static final long POLL_MS = 4000;
     private static final String[] LAYER_LABELS = {
-            "imagery", "Imagery (MBTiles)", "elevation", "Elevation (DTED)",
+            "imagery", "Imagery (MBTiles)", "elevation", "Elevation (DTED + GeoTIFF)",
             "osm", "Roads, trails, buildings (KMZ)", "photos", "Street-level photos",
     };
 
@@ -73,6 +76,8 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
     private EditText tokenField;
     private TextView areaLabel;
     private LinearLayout layersBox;
+    private Spinner sourceSpinner;
+    private TextView sourceDetails;
     private Spinner zoomSpinner;
     private EditText nameField;
     private TextView estimateLabel;
@@ -85,6 +90,8 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
     private double[][] area;
     private final List<CheckBox> layerBoxes = new ArrayList<>();
     private final List<Integer> zoomChoices = new ArrayList<>();
+    private final Map<String, String> layerNames = new HashMap<>();
+    private int zoom = 17;  // the operator's last imagery zoom, kept across source changes
     private List<Models.Job> jobs = new ArrayList<>();
     private volatile boolean downloading;  // set on the UI thread, cleared on the worker
 
@@ -151,18 +158,21 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         layersBox = new LinearLayout(plugin);
         layersBox.setOrientation(LinearLayout.VERTICAL);
         col.addView(layersBox);
+        // Placed under the Imagery checkbox by buildLayerChoices().
+        sourceSpinner = new Spinner(plugin);
+        sourceSpinner.setOnItemSelectedListener(onSelect(() -> {
+            showSourceDetails();
+            buildZoomChoices();
+            refreshEstimate();
+        }));
+        sourceDetails = new TextView(plugin);
+        sourceDetails.setTextColor(plugin.getResources().getColor(R.color.al_text_secondary));
         zoomSpinner = new Spinner(plugin);
-        zoomSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
-                refreshEstimate();
-            }
-
-            @Override
-            public void onNothingSelected(android.widget.AdapterView<?> parent) {
-            }
-        });
-        col.addView(zoomSpinner);
+        zoomSpinner.setOnItemSelectedListener(onSelect(() -> {
+            int position = zoomSpinner.getSelectedItemPosition();
+            if (position >= 0 && position < zoomChoices.size()) zoom = zoomChoices.get(position);
+            refreshEstimate();
+        }));
 
         header(col, "3 · Capture");
         nameField = field(col, "Name (e.g. Sector 3)", "", InputType.TYPE_CLASS_TEXT);
@@ -175,9 +185,22 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         col.addView(jobsBox);
 
         header(col, "Point lookup");
-        button(col, "Tap a spot: elevation, address, photos", v -> lookupPoint());
+        button(col, "Tap a spot: elevation, street address, photos", v -> lookupPoint());
         pointLabel = text(col, "", false);
         return scroll;
+    }
+
+    private android.widget.AdapterView.OnItemSelectedListener onSelect(Runnable action) {
+        return new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                action.run();
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {
+            }
+        };
     }
 
     private int dp(int value) {
@@ -289,28 +312,69 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         });
     }
 
+    /** One checkbox per layer with a line on what it downloads; imagery gets its source and detail pickers. */
     private void buildLayerChoices() {
         layersBox.removeAllViews();
         layerBoxes.clear();
+        layerNames.clear();
+        zoom = info.defaultZoom;
+        int indent = dp(32);
         for (int i = 0; i < LAYER_LABELS.length; i += 2) {
-            if (!info.layers.contains(LAYER_LABELS[i])) continue;
+            String layer = LAYER_LABELS[i];
+            if (!info.layers.contains(layer)) continue;
             CheckBox box = new CheckBox(plugin);
             box.setText(LAYER_LABELS[i + 1]);
-            box.setTag(LAYER_LABELS[i]);
-            box.setChecked(!"photos".equals(LAYER_LABELS[i]));
+            box.setTag(layer);
+            box.setChecked(!"photos".equals(layer));
             box.setOnCheckedChangeListener((b, c) -> refreshEstimate());
             layersBox.addView(box);
             layerBoxes.add(box);
+            layerNames.put(layer, LAYER_LABELS[i + 1]);
+            TextView description = text(layersBox, Describe.layer(layer, info.dtedLevel), false);
+            description.setPadding(indent, 0, 0, dp(4));
+            if ("imagery".equals(layer)) {
+                if (info.imagerySources.size() > 1) {
+                    List<String> labels = new ArrayList<>();
+                    for (Models.ImagerySource source : info.imagerySources) labels.add(source.label());
+                    sourceSpinner.setAdapter(new ArrayAdapter<>(plugin, android.R.layout.simple_spinner_dropdown_item, labels));
+                    sourceSpinner.setSelection(Math.max(0, info.imagerySources.indexOf(info.defaultSource())));
+                    sourceSpinner.setPadding(indent, 0, 0, 0);
+                    layersBox.addView(sourceSpinner);
+                    sourceDetails.setPadding(indent, 0, 0, dp(4));
+                    layersBox.addView(sourceDetails);
+                }
+                zoomSpinner.setPadding(indent, 0, 0, 0);
+                layersBox.addView(zoomSpinner);
+            }
         }
+        showSourceDetails();
+        buildZoomChoices();
+    }
+
+    /** The chosen imagery source, or null on a service that doesn't list sources. */
+    private Models.ImagerySource selectedSource() {
+        if (info == null || info.imagerySources.size() < 2) return info == null ? null : info.defaultSource();
+        int position = sourceSpinner.getSelectedItemPosition();
+        return position >= 0 && position < info.imagerySources.size() ? info.imagerySources.get(position) : info.defaultSource();
+    }
+
+    private void showSourceDetails() {
+        Models.ImagerySource source = selectedSource();
+        sourceDetails.setText(source == null ? "" : source.details());
+    }
+
+    /** Zoom choices end at the chosen source's limit; the operator's zoom is kept when it still fits. */
+    private void buildZoomChoices() {
+        if (info == null) return;
+        Models.ImagerySource source = selectedSource();
         zoomChoices.clear();
+        zoomChoices.addAll(Describe.zoomChoices(source == null ? info.imageryMaxZoom : source.maxZoom));
+        zoom = Describe.keepZoom(zoom, zoomChoices);
+        double latitude = area == null ? 40 : area[0][1];
         List<String> labels = new ArrayList<>();
-        for (int z = 15; z <= Math.min(19, info.imageryMaxZoom); z++) {
-            zoomChoices.add(z);
-            // Ground resolution at ~40°N (cos ≈ 0.77), close enough for the contiguous US.
-            labels.add(String.format(Locale.US, "Imagery detail z%d (~%.1f m)", z, 156543.03 * 0.77 / Math.pow(2, z)));
-        }
+        for (int z : zoomChoices) labels.add(Describe.zoomLabel(z, latitude));
         zoomSpinner.setAdapter(new ArrayAdapter<>(plugin, android.R.layout.simple_spinner_dropdown_item, labels));
-        zoomSpinner.setSelection(Math.max(0, zoomChoices.indexOf(info.defaultZoom)));
+        zoomSpinner.setSelection(Math.max(0, zoomChoices.indexOf(zoom)));
     }
 
     private void pickShape() {
@@ -333,6 +397,7 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         double km2 = AreaMath.areaKm2(area);
         String limit = info == null ? "" : String.format(Locale.US, " (limit %.0f km²)", info.maxAreaKm2);
         areaLabel.setText(String.format(Locale.US, "%s · %.2f km²%s", label, km2, limit));
+        buildZoomChoices();  // resolution labels depend on the latitude
         refreshEstimate();
     }
 
@@ -342,9 +407,11 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         for (CheckBox box : layerBoxes) if (box.isChecked()) layers.put(box.getTag());
         if (layers.length() == 0) return null;
         JSONObject request = new JSONObject().put("area", AreaMath.toGeoJson(area)).put("layers", layers);
-        if (zoomSpinner.getSelectedItemPosition() >= 0 && !zoomChoices.isEmpty()) {
-            request.put("options", new JSONObject().put("imagery_zoom", zoomChoices.get(zoomSpinner.getSelectedItemPosition())));
-        }
+        JSONObject options = new JSONObject();
+        if (!zoomChoices.isEmpty()) options.put("imagery_zoom", zoom);
+        Models.ImagerySource source = selectedSource();
+        if (source != null) options.put("imagery_source", source.id);
+        if (options.length() > 0) request.put("options", options);
         String name = nameField.getText().toString().trim();
         if (!name.isEmpty()) request.put("name", name);
         return request;
@@ -364,6 +431,11 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         background("Estimate", () -> {
             Models.Estimate e = client.estimate(request);
             ui(() -> {
+                for (CheckBox box : layerBoxes) {
+                    Long bytes = box.isChecked() ? e.layerBytes.get((String) box.getTag()) : null;
+                    String name = layerNames.get((String) box.getTag());
+                    box.setText(bytes == null ? name : name + "   " + Describe.size(bytes));
+                }
                 estimateLabel.setText(String.format(Locale.US, "≈ %.1f MB package · ~%d min%s", e.bytes / 1e6,
                         Math.max(1, e.seconds / 60), e.allowed ? "" : " — area too large"));
                 captureButton.setEnabled(e.allowed);
@@ -413,6 +485,7 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
             if (job.isActive()) {
                 text(card, String.format(Locale.US, "%.0f%% %s", job.percent, job.phase == null ? "" : job.phase), false);
             }
+            if (job.imagerySource != null) text(card, "Imagery: " + job.imagerySource, false);
             for (String warning : job.warnings) text(card, "⚠ " + warning, false);
             for (String error : job.layerErrors) text(card, "✗ " + error, false);
             if (job.error != null) text(card, "✗ " + job.error, false);
@@ -425,6 +498,13 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
                 client.retry(job.id);
                 refreshJobs();
             }));
+            // Tiles still missing after the service's own automatic retry; this refetches only those.
+            if (job.hasMissingTiles()) {
+                button(actions, String.format(Locale.US, "Retry %d missing tiles", job.failedTiles), v -> background("Retry", () -> {
+                    client.retry(job.id);
+                    refreshJobs();
+                }));
+            }
             button(actions, job.isActive() ? "Cancel" : "Delete", v -> background("Delete", () -> {
                 client.delete(job.id);
                 refreshJobs();
@@ -473,17 +553,8 @@ public class AlephDropDownReceiver extends DropDownReceiver implements DropDown.
         picker.pickPoint((lat, lon) -> {
             pointLabel.setText("Looking up…");
             background("Point lookup", () -> {
-                JSONObject r = client.point(lat, lon);
-                StringBuilder text = new StringBuilder(String.format(Locale.US, "%.5f, %.5f", lat, lon));
-                if (!r.isNull("elevation_m")) {
-                    double m = r.optDouble("elevation_m");
-                    text.append(String.format(Locale.US, "\nElevation %.0f m (%.0f ft)", m, m * 3.28084));
-                }
-                JSONObject address = r.optJSONObject("address");
-                if (address != null) text.append("\nNear ").append(address.optString("label"));
-                JSONArray photos = r.optJSONArray("photos");
-                if (photos != null) text.append("\n").append(photos.length()).append(" street-level photo(s) within 150 m");
-                ui(() -> pointLabel.setText(text.toString()));
+                String text = Models.Point.parse(client.point(lat, lon), lat, lon).describe();
+                ui(() -> pointLabel.setText(text));
             });
         });
     }

@@ -119,8 +119,8 @@ atak/                            ATAK plugin (Java, ATAK-CIV 5.6 SDK)
 | Phase 1 — job API, auth, estimate, package | ✅ | 50 service tests; resumable Range downloads; per-user jobs; 72 h expiry |
 | infra-TAK integration on any version | ✅ | Hook verified on all 250 infra-TAK releases (v0.1.0 → v10.2.30); Caddy + heal tested locally. **Full `install.sh` not yet run on a real host** |
 | Phase 2 — CloudTAK plugin | 🔧 Built | Passes CloudTAK 13.14.1's lint + `vue-tsc`; not yet run in a live CloudTAK |
-| Phase 3 — ATAK plugin | 🔧 Built | APK builds and its unit tests pass against the 5.6 SDK; needs the airplane-mode device test (docs/VERIFY.md) |
-| Phase 4 — WinTAK plugin | 🔧 Built | Builds against the installed WinTAK 5.6.0.151 with 0 warnings; MEF exports verified; 15 Core tests pass. Uses WinTAK's own rectangle / polygon / existing-shape pickers and import pipeline. Not yet loaded in a running WinTAK |
+| Phase 3 — ATAK plugin | 🔧 Built | APK builds and its unit tests pass against the 5.6 SDK; needs the airplane-mode device test (docs/VERIFY.md). 0.1.4 adds the imagery-source picker, layer descriptions/sizes, Retry missing tiles and street address. Its JVM tests pass, but it hasn't been built against the SDK yet |
+| Phase 4 — WinTAK plugin | 🔧 Built | Builds against the installed WinTAK 5.6.0.151 with 0 warnings; MEF exports verified; 22 Core tests pass. Uses WinTAK's own rectangle / polygon / existing-shape pickers and import pipeline. 0.1.4 adds the same source picker, descriptions, retry and street address. Its Core tests pass, but it hasn't been built against WinTAK yet. Not yet loaded in a running WinTAK |
 | TAK Server Data Sync push, field node, AI terrain brief | ⬜ Phase 5 | Decisions needed (below) |
 | ATAK token onboarding by QR | ⬜ Deferred | Paste URL + token for now |
 

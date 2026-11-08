@@ -39,13 +39,33 @@
             <TextBlock Text="{Binding AreaLabel}" TextWrapping="Wrap" Opacity="0.85" />
 
             <TextBlock Style="{StaticResource Header}" Text="2 · Layers" />
+            <!-- Each layer: checkbox + estimated size, then what it downloads. Imagery also gets the
+                 source picker and detail, bound to the view model through the enclosing ItemsControl. -->
             <ItemsControl ItemsSource="{Binding Layers}">
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate><CheckBox Content="{Binding Label}" IsChecked="{Binding Selected}" Margin="0,2" /></DataTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,2,0,4">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding SizeLabel}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                                <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected}" />
+                            </DockPanel>
+                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11" Opacity="0.75" Margin="20,0,0,0" />
+                            <StackPanel Margin="20,4,0,0" Visibility="{Binding IsImagery, Converter={StaticResource Visible}}">
+                                <ComboBox ItemsSource="{Binding DataContext.ImagerySources, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                          SelectedItem="{Binding DataContext.SelectedSource, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                          DisplayMemberPath="Label" HorizontalAlignment="Left" MinWidth="220" ToolTip="Imagery source"
+                                          Visibility="{Binding DataContext.HasSourceChoice, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource Visible}}" />
+                                <TextBlock Text="{Binding DataContext.SourceDetails, RelativeSource={RelativeSource AncestorType=ItemsControl}}" TextWrapping="Wrap"
+                                           FontSize="11" Opacity="0.75" Margin="0,2,0,0"
+                                           Visibility="{Binding DataContext.HasSourceChoice, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource Visible}}" />
+                                <ComboBox ItemsSource="{Binding DataContext.Zooms, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                          SelectedItem="{Binding DataContext.SelectedZoom, RelativeSource={RelativeSource AncestorType=ItemsControl}}" DisplayMemberPath="Label"
+                                          HorizontalAlignment="Left" MinWidth="160" Margin="0,4,0,0" ToolTip="Imagery detail" />
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <ComboBox ItemsSource="{Binding Zooms}" SelectedItem="{Binding SelectedZoom}" DisplayMemberPath="Label"
-                      HorizontalAlignment="Left" MinWidth="180" Margin="0,4,0,0" ToolTip="Imagery detail" />
 
             <TextBlock Style="{StaticResource Header}" Text="3 · Capture" />
             <TextBox Text="{Binding CaptureName, UpdateSourceTrigger=PropertyChanged}" ToolTip="Name (e.g. Sector 3)" />
@@ -66,6 +86,9 @@
                                             Visibility="{Binding CanDownload, Converter={StaticResource Visible}}" />
                                     <Button Content="Retry" Command="{Binding RetryCommand}"
                                             Visibility="{Binding CanRetry, Converter={StaticResource Visible}}" />
+                                    <Button Content="{Binding RetryMissingLabel}" Command="{Binding RetryCommand}"
+                                            ToolTip="These tiles failed even after the server's automatic retry; this fetches only them."
+                                            Visibility="{Binding CanRetryMissing, Converter={StaticResource Visible}}" />
                                     <Button Content="{Binding DeleteLabel}" Command="{Binding DeleteCommand}" />
                                 </WrapPanel>
                             </StackPanel>
@@ -75,11 +98,11 @@
             </ItemsControl>
 
             <TextBlock Style="{StaticResource Header}" Text="Point lookup" />
-            <Button Content="Click a spot: elevation, address, photos" Command="{Binding PointCommand}" HorizontalAlignment="Left" />
+            <Button Content="Click a spot: elevation, street address, photos" Command="{Binding PointCommand}" HorizontalAlignment="Left" />
             <TextBlock Text="{Binding PointResult}" TextWrapping="Wrap" Margin="0,4" />
 
             <TextBlock FontSize="11" Opacity="0.6" Margin="0,14,0,0" TextWrapping="Wrap"
-                       Text="Open data only: USGS NAIP imagery, AWS Terrain Tiles, © OpenStreetMap contributors, Mapillary (CC BY-SA)." />
+                       Text="Open data only: the imagery source you pick, AWS Terrain Tiles, © OpenStreetMap contributors, Mapillary (CC BY-SA)." />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -33,7 +33,7 @@ namespace AlephWinTak
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AlephWinTak", "packages");
         private static readonly (string Key, string Label)[] LayerLabels =
         {
-            ("imagery", "Imagery (MBTiles)"), ("elevation", "Elevation (DTED)"),
+            ("imagery", "Imagery (MBTiles)"), ("elevation", "Elevation (DTED + GeoTIFF)"),
             ("osm", "Roads, trails, buildings (KMZ)"), ("photos", "Street-level photos"),
         };
 
@@ -88,6 +88,22 @@ namespace AlephWinTak
         public ObservableCollection<ZoomItem> Zooms { get; } = new ObservableCollection<ZoomItem>();
         public ZoomItem SelectedZoom { get => _zoom; set { Set(ref _zoom, value); RefreshEstimate(); } }
         private ZoomItem _zoom;
+        /// <summary>Imagery a capture may pick; empty on services before 0.1.4 (they use their default).</summary>
+        public ObservableCollection<ImagerySource> ImagerySources { get; } = new ObservableCollection<ImagerySource>();
+        public bool HasSourceChoice => ImagerySources.Count > 1;
+        public ImagerySource SelectedSource
+        {
+            get => _source;
+            set
+            {
+                Set(ref _source, value);
+                OnPropertyChanged(nameof(SourceDetails));
+                BuildZooms();
+                RefreshEstimate();
+            }
+        }
+        private ImagerySource _source;
+        public string SourceDetails => _source?.Details ?? "";
         public ObservableCollection<JobItem> Jobs { get; } = new ObservableCollection<JobItem>();
         private bool _allowed = true;
         private bool CanCapture => Connected && _area != null && Layers.Any(l => l.Selected) && _allowed;
@@ -138,15 +154,34 @@ namespace AlephWinTak
                     info.Version, info.MaxAreaKm2, info.TtlHours);
                 Layers.Clear();
                 foreach (var (key, label) in LayerLabels.Where(l => info.Layers.Contains(l.Key)))
-                    Layers.Add(new LayerItem(key, label, key != "photos", RefreshEstimate));
-                Zooms.Clear();
-                for (int z = 15; z <= Math.Min(19, info.ImageryMaxZoom); z++)
-                    Zooms.Add(new ZoomItem(z));
-                _zoom = Zooms.FirstOrDefault(z => z.Zoom == info.DefaultZoom) ?? Zooms.LastOrDefault();
-                OnPropertyChanged(nameof(SelectedZoom));
+                    Layers.Add(new LayerItem(key, label, Describe.Layer(key, info.DtedLevel), key != "photos", RefreshEstimate));
+                ImagerySources.Clear();
+                foreach (var source in info.ImagerySources) ImagerySources.Add(source);
+                OnPropertyChanged(nameof(HasSourceChoice));
+                _source = info.DefaultSource;
+                OnPropertyChanged(nameof(SelectedSource));
+                OnPropertyChanged(nameof(SourceDetails));
+                _lastZoom = info.DefaultZoom;
+                BuildZooms();
                 ShowJobs(jobs);
                 _poll.Start();
             });
+        }
+
+        private int _lastZoom = 17;  // the operator's zoom, kept across source changes when it still fits
+
+        /// <summary>Zoom choices end at the chosen source's limit; labels use the area's latitude.</summary>
+        private void BuildZooms()
+        {
+            if (_info == null) return;
+            if (_zoom != null) _lastZoom = _zoom.Zoom;
+            var choices = Describe.ZoomChoices(_source?.MaxZoom ?? _info.ImageryMaxZoom);
+            int keep = Describe.KeepZoom(_lastZoom, choices);
+            double latitude = _area?[0].Lat ?? 40;
+            Zooms.Clear();
+            foreach (int z in choices) Zooms.Add(new ZoomItem(z, latitude));
+            _zoom = Zooms.FirstOrDefault(z => z.Zoom == keep) ?? Zooms.LastOrDefault();
+            OnPropertyChanged(nameof(SelectedZoom));
         }
 
         internal void SelectArea(IAreaSelectionOption option)
@@ -181,6 +216,7 @@ namespace AlephWinTak
                 AreaLabel = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} km² (limit {2:0} km²)",
                     string.IsNullOrEmpty(shape.Name) ? option.Title : shape.Name, km2, _info?.MaxAreaKm2 ?? 0);
                 Status = Connected ? Status : "Area selected — connect to estimate.";
+                BuildZooms();  // resolution labels depend on the latitude
                 RefreshEstimate();
             });
         }
@@ -191,7 +227,10 @@ namespace AlephWinTak
             var layers = new JArray(Layers.Where(l => l.Selected).Select(l => l.Key));
             if (layers.Count == 0) return null;
             var request = new JObject { ["area"] = AreaMath.ToGeoJson(_area), ["layers"] = layers };
-            if (SelectedZoom != null) request["options"] = new JObject { ["imagery_zoom"] = SelectedZoom.Zoom };
+            var options = new JObject();
+            if (SelectedZoom != null) options["imagery_zoom"] = SelectedZoom.Zoom;
+            if (SelectedSource != null) options["imagery_source"] = SelectedSource.Id;
+            if (options.Count > 0) request["options"] = options;
             if (!string.IsNullOrWhiteSpace(CaptureName)) request["name"] = CaptureName.Trim();
             return request;
         }
@@ -209,6 +248,8 @@ namespace AlephWinTak
             {
                 var e = await _client.EstimateAsync(request);
                 _allowed = e.Allowed;
+                foreach (var layer in Layers)
+                    layer.SizeLabel = layer.Selected && e.LayerBytes.TryGetValue(layer.Key, out long bytes) ? Describe.Size(bytes) : "";
                 EstimateLabel = string.Format(CultureInfo.InvariantCulture, "≈ {0:0.0} MB package · ~{1} min{2}",
                     e.Bytes / 1e6, Math.Max(1, e.Seconds / 60), e.Allowed ? "" : " — area too large");
                 CommandManager.InvalidateRequerySuggested();
@@ -292,15 +333,7 @@ namespace AlephWinTak
                 {
                     PointResult = "Looking up…";
                     var r = await _client.PointAsync(at.Latitude, at.Longitude);
-                    var text = string.Format(CultureInfo.InvariantCulture, "{0:0.00000}, {1:0.00000}", at.Latitude, at.Longitude);
-                    if (r["elevation_m"]?.Type == JTokenType.Float || r["elevation_m"]?.Type == JTokenType.Integer)
-                    {
-                        double m = (double)r["elevation_m"];
-                        text += string.Format(CultureInfo.InvariantCulture, "\nElevation {0:0} m ({1:0} ft)", m, m * 3.28084);
-                    }
-                    if (r["address"] is JObject address) text += "\nNear " + (string)address["label"];
-                    if (r["photos"] is JArray photos) text += $"\n{photos.Count} street-level photo(s) within 150 m";
-                    PointResult = text;
+                    PointResult = Core.PointResult.Parse(r, at.Latitude, at.Longitude).Describe();
                 });
             };
             _mapView.MapClick += _pointHandler;
@@ -337,8 +370,23 @@ namespace AlephWinTak
     {
         private readonly Action _changed;
         private bool _selected;
+        private string _sizeLabel = "";
         public string Key { get; }
         public string Label { get; }
+        /// <summary>What ticking this layer downloads (Core/Describe.cs).</summary>
+        public string Description { get; }
+        public bool IsImagery => Key == "imagery";
+
+        /// <summary>"≈ 6.1 MB" from the last estimate, empty when unticked.</summary>
+        public string SizeLabel
+        {
+            get => _sizeLabel;
+            set
+            {
+                _sizeLabel = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SizeLabel)));
+            }
+        }
 
         public bool Selected
         {
@@ -351,10 +399,11 @@ namespace AlephWinTak
             }
         }
 
-        internal LayerItem(string key, string label, bool selected, Action changed)
+        internal LayerItem(string key, string label, string description, bool selected, Action changed)
         {
             Key = key;
             Label = label;
+            Description = description;
             _selected = selected;
             _changed = changed;
         }
@@ -365,11 +414,14 @@ namespace AlephWinTak
     public sealed class ZoomItem
     {
         public int Zoom { get; }
+        /// <summary>"z17 (~0.9 m)" at the area's latitude.</summary>
+        public string Label { get; }
 
-        // Ground resolution at ~40°N (cos ≈ 0.77), close enough for the contiguous US.
-        public string Label => string.Format(CultureInfo.InvariantCulture, "z{0} (~{1:0.0} m)", Zoom, 156543.03 * 0.77 / Math.Pow(2, Zoom));
-
-        internal ZoomItem(int zoom) => Zoom = zoom;
+        internal ZoomItem(int zoom, double latitude)
+        {
+            Zoom = zoom;
+            Label = Describe.ZoomLabel(zoom, latitude);
+        }
     }
 
     public sealed class JobItem
@@ -382,6 +434,7 @@ namespace AlephWinTak
             {
                 var lines = new List<string>();
                 if (Job.IsActive) lines.Add(string.Format(CultureInfo.InvariantCulture, "{0:0}% {1}", Job.Percent, Job.Phase));
+                if (Job.ImagerySource != null) lines.Add("Imagery: " + Job.ImagerySource);
                 lines.AddRange(Job.Warnings.Select(w => "⚠ " + w));
                 lines.AddRange(Job.LayerErrors.Select(e => "✗ " + e));
                 if (Job.Error != null) lines.Add("✗ " + Job.Error);
@@ -392,6 +445,9 @@ namespace AlephWinTak
         public string DownloadLabel => string.Format(CultureInfo.InvariantCulture, "Download & import ({0:0.0} MB)", Job.PackageBytes / 1e6);
         public bool CanDownload => Job.IsComplete;
         public bool CanRetry => Job.CanRetry;
+        /// <summary>Tiles still missing after the service's own automatic retry; retrying fetches only those.</summary>
+        public bool CanRetryMissing => Job.HasMissingTiles;
+        public string RetryMissingLabel => string.Format(CultureInfo.InvariantCulture, "Retry {0} missing tiles", Job.FailedTiles);
         public string DeleteLabel => Job.IsActive ? "Cancel" : "Delete";
         public ICommand Download { get; }
         public ICommand RetryCommand { get; }

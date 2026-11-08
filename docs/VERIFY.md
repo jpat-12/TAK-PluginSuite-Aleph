@@ -45,11 +45,24 @@ cd ../atak && ./gradlew assembleCivDebug testCivDebugUnitTest                # A
 ## ATAK (plan gate: package works with the device in airplane mode)
 
 8. Install the APK → Aleph Capture → paste URL + token → **Save & connect** → "Connected".
-9. Draw a rectangle with ATAK's shape tool → **Pick a shape** → tap it → estimate shows.
+9. Draw a rectangle with ATAK's shape tool → **Pick a shape** → tap it → estimate shows. Each
+   layer shows a line on what it downloads and, once estimated, its size. Under Imagery, pick each
+   source in turn: its description appears and the detail list ends at that source's limit
+   (NAIP z18, USGS Imagery Only z16, Sentinel-2 cloudless z14).
 10. Capture → wait for complete → **Download & import** on Wi-Fi. Kill the network mid-download
     once: the retry resumes rather than restarting.
 11. Airplane mode → the imagery (Overlay Manager → MBTiles), OSM KMZ and elevation (long-press
     → elevation reads a value inside the area) all still work. Elevation of an existing DTED cell
     outside the area is unchanged.
+12. Point lookup → tap a spot in a town → a street address with its distance, then "Near …".
+    A capture whose imagery still had failed tiles shows **Retry N missing tiles**.
 
-Record the ATAK/CloudTAK/infra-TAK versions you ran this on in the release notes.
+## WinTAK
+
+13. `dotnet build wintak/AlephWinTak -c Release` and `dotnet test wintak/AlephWinTak.Tests`, then
+    elevated `.\wintak\install.ps1` → restart WinTAK → Home → Tools → Aleph.
+14. Repeat steps 8–12 in the pane: connect, pick an area with WinTAK's rectangle/polygon tools,
+    check the layer lines, sizes and the imagery-source picker under Imagery, capture,
+    **Download & import**, click a spot for point lookup.
+
+Record the ATAK/WinTAK/CloudTAK/infra-TAK versions you ran this on in the release notes.
