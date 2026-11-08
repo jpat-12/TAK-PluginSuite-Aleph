@@ -100,9 +100,33 @@ else
 fi
 
 if [ "$DO_BUILD" -eq 1 ]; then
-    # Same two steps infra-TAK's own CloudTAK plugin installer runs; --no-cache so the Vite
-    # bundle can't come from a layer cached before the plugin files changed.
+    # Rebuild and recreate with the SAME compose files the running CloudTAK was started with.
+    # A bare `docker compose` reads only docker-compose.yml (+ override); infra-TAK also passes
+    # its own file (e.g. docker-compose.local.yml), and recreating the API without it loses its
+    # settings — seen live as ECONNREFUSED to the storage container. Compose records the files
+    # on each container; read them from a service we don't recreate (retention, events, …), so a
+    # previous bad run of this script that recreated the API can't propagate its own files.
+    COMPOSE_FILES=""
+    if command -v docker >/dev/null 2>&1; then
+        for c in $(docker ps -a --format '{{.Names}}' | grep '^cloudtak-' | grep -v '^cloudtak-api-' ) cloudtak-api-1; do
+            COMPOSE_FILES="$(docker inspect "$c" --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 2>/dev/null || true)"
+            [ -n "$COMPOSE_FILES" ] && [ "$COMPOSE_FILES" != "<no value>" ] && break
+            COMPOSE_FILES=""
+        done
+    fi
+    COMPOSE=(docker compose)
+    if [ -n "$COMPOSE_FILES" ]; then
+        IFS=',' read -r -a files <<< "$COMPOSE_FILES"
+        for f in "${files[@]}"; do
+            [ -f "$f" ] || { echo "ERROR: CloudTAK was started with $f, which no longer exists; rebuild CloudTAK from infra-TAK instead." >&2; exit 1; }
+            COMPOSE+=(-f "$f")
+        done
+        echo "==> Using CloudTAK's compose files: $COMPOSE_FILES"
+    else
+        echo "==> No running CloudTAK containers to copy compose files from; using the defaults in $CT_DIR"
+    fi
+    # --no-cache so the Vite bundle can't come from a layer cached before the plugin files changed.
     echo "==> Rebuilding the CloudTAK API image (5–15 min; the build also lint/type-checks the plugin)"
-    (cd "$CT_DIR" && docker compose build --no-cache api && docker compose up -d --force-recreate api)
+    (cd "$CT_DIR" && "${COMPOSE[@]}" build --no-cache api && "${COMPOSE[@]}" up -d --force-recreate api)
     echo "==> Done. In the browser: CloudTAK → Settings → Refresh App (a hard refresh is not enough)."
 fi
