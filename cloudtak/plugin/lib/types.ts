@@ -36,6 +36,8 @@ export interface LayerProgress {
     done: number;
     total: number | null;
     error?: string | null;
+    // Set when the layer completes. failed_tiles: imagery tiles still missing after the automatic retry.
+    stats?: { failed_tiles?: number; [key: string]: unknown };
 }
 
 export interface JobLinks {

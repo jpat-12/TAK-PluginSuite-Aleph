@@ -78,6 +78,13 @@ Rough (±30%); clients show it before submitting.
 completes (its `progress[layer].state == "failed"` with an `error`); the job fails only if every
 layer failed. `links` exists only when `complete`.
 
+**Tiles that fail to download.** Each layer retries failed tiles once automatically (after ~5 s,
+at half the concurrency; `phase` reads "Retrying N failed … tiles" meanwhile). Imagery tiles that
+still fail leave the layer `complete` with blank gaps, a warning, and
+`progress.imagery.stats.failed_tiles > 0`; clients then offer **Retry missing tiles**, which is just
+`POST …/retry` (it refetches only the gaps). Elevation tolerates no failed tiles: the layer fails
+instead, and Retry applies the same way. `failed_tiles` is additive — absent on jobs from ≤ 0.1.3.
+
 ### `GET /api/v1/jobs/{id}/package` — the TAK data package
 Bearer (ATAK) **or** signed link (browser). Supports `Range` / `If-Range` (ETag = SHA-256) for
 resumable downloads; `X-Content-SHA256` header. Layout: [`PACKAGE-FORMAT`](#package-format).

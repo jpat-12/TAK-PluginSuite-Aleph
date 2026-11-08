@@ -10,7 +10,7 @@
 import * as mapgl from 'maplibre-gl';
 import type { LayerSpecification, Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { pluginApi } from './plugin-api.ts';
-import { addJobData, jobDataLayers } from './map-layers.ts';
+import { addJobData, jobDataLayers, shownDatasets } from './map-layers.ts';
 import type { Job } from './types.ts';
 
 export interface SwipeState {
@@ -157,7 +157,7 @@ function overlayStyle(m: MapLibreMap): StyleSpecification {
 }
 
 /** Start comparing `job` (already shown on the map) against the basemap. Replaces any running compare. */
-export function startSwipe(job: Job, imagerySource?: string): void {
+export function startSwipe(job: Job, imagerySource?: string, fraction = 0.5): void {
     stopSwipe();
     const m = map();
     const container = m.getContainer();
@@ -199,7 +199,8 @@ export function startSwipe(job: Job, imagerySource?: string): void {
         minPitch: m.getMinPitch(), maxPitch: m.getMaxPitch(),
         center: m.getCenter(), zoom: m.getZoom(), bearing: m.getBearing(), pitch: m.getPitch(), roll: m.getRoll(),
     });
-    overlay.once('load', () => addJobData(overlay, job, imagerySource));
+    const datasets = shownDatasets(job.id);           // the overlay shows what the panel has switched on
+    overlay.once('load', () => addJobData(overlay, job, imagerySource, datasets));
     overlay.on('error', (e) => console.warn('[plugin-aleph] compare overlay:', e.error));
 
     // Transparent, not hidden: hidden sources drop out of the attribution control.
@@ -260,7 +261,7 @@ export function startSwipe(job: Job, imagerySource?: string): void {
     m.on('resize', resize);
 
     active = {
-        jobId: job.id, fraction: 0.5, bbox, overlay, root, clip, divider, handle, muted, frame: null,
+        jobId: job.id, fraction: Math.min(1, Math.max(0, fraction)), bbox, overlay, root, clip, divider, handle, muted, frame: null,
         detach: () => {
             m.off('move', sync);
             m.off('resize', resize);
@@ -268,6 +269,11 @@ export function startSwipe(job: Job, imagerySource?: string): void {
     };
     sync();
     notify();
+}
+
+/** Re-request a source's tiles on the compare overlay too (map-layers' tile reload). */
+export function refreshSwipeSource(sourceId: string): void {
+    if (active?.overlay.getSource(sourceId)) active.overlay.refreshTiles(sourceId);
 }
 
 /** End the compare (only if it's `jobId`'s, when given) and put the main map's layers back. */

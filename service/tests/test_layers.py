@@ -13,7 +13,12 @@ from PIL import Image
 from aleph_tak.config import DEFAULTS, merge
 from aleph_tak.core.geo import corners
 from aleph_tak.formats import dted, geotiff, mbtiles
+from aleph_tak import net
 from aleph_tak.layers import Context, elevation, imagery, osm
+
+def setUpModule():
+    net.RETRY_PAUSE_S = 0  # the automatic second pass waits 5 s in production
+
 
 # ~1.1 km × 0.85 km in Springfield, IL.
 AREA = corners((39.795, -89.655, 39.805, -89.645))
@@ -123,6 +128,7 @@ class ImageryTests(unittest.TestCase):
             with mock.patch.object(imagery, "fetch_each", one_bad_tile):
                 first = imagery.run(context(tmp))
             self.assertTrue(any("retry" in w for w in first.warnings))
+            self.assertEqual(first.stats["failed_tiles"], 1)    # failed its automatic second pass too
             fetched = []
 
             def record(client, addresses, workers):
@@ -132,6 +138,26 @@ class ImageryTests(unittest.TestCase):
                 second = imagery.run(context(tmp))
         self.assertEqual(len(fetched), 1)          # only the failed tile is requested again
         self.assertFalse(second.warnings)
+        self.assertEqual(second.stats["failed_tiles"], 0)
+
+    def test_automatic_second_pass_recovers_a_transient_failure(self):
+        good = jpeg((5, 6, 7))
+        calls = []
+
+        def first_pass_502(client, addresses, workers):
+            calls.append((len(addresses), workers))
+            for i, _ in enumerate(addresses):
+                yield OSError("HTTP 502") if len(calls) == 1 and i < 2 else good
+        phases = []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(imagery, "fetch_each", first_pass_502):
+            ctx = context(tmp)
+            ctx.progress = lambda phase, *a, **k: phases.append(phase)
+            result = imagery.run(ctx)
+        self.assertIn("Retrying 2 failed imagery tiles", phases)
+        self.assertEqual(calls[1][0], 2)                     # only the two failures, once more
+        self.assertLessEqual(calls[1][1], calls[0][1])       # at no more than the first pass's concurrency
+        self.assertEqual(result.stats["failed_tiles"], 0)
+        self.assertFalse(any("failed to download" in w for w in result.warnings))
 
     def test_mostly_failing_source_fails_the_layer(self):
         def all_bad(client, addresses, workers):

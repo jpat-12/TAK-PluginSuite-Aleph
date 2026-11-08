@@ -17,7 +17,7 @@ from ..core.common import MissingImagery, open_image, write_bytes
 from ..core.geo import MERCATOR_RADIUS, extent, grid, tiles
 from ..formats import mbtiles
 from ..formats.datapackage import Entry
-from ..net import Failures, fetch_each
+from ..net import Failures, fetch_each, fetch_retrying
 from . import LayerResult
 
 OVERVIEW_LEVELS = 6     # z17 capture → overviews down to z11, enough to find it when zoomed out
@@ -49,7 +49,9 @@ def download(ctx, source, zoom, root):
     failures = Failures("Imagery", plan["count"])
     # ArcGIS ImageServers render each tile on request and answer bursts with 502s.
     workers = 4 if source["kind"] == "arcgis-export" else WORKERS
-    for tile, data in zip(pending, fetch_each(ctx.client, addresses, workers)):
+    retry = lambda count: ctx.progress(f"Retrying {count} failed imagery tiles", done, plan["count"])
+    for index, data in fetch_retrying(fetch_each, ctx.client, addresses, workers, on_retry=retry):
+        tile = pending[index]
         if isinstance(data, Exception):
             failures.add(data)  # not persisted: a retry fetches it again
         elif data is None:
@@ -177,6 +179,6 @@ def run(ctx):
     latitude = math.radians((south + north) / 2)
     resolution = 2 * math.pi * MERCATOR_RADIUS * math.cos(latitude) / (256 * 2**zoom)
     result.stats = dict(source=source["name"], zoom=zoom, tiles=plan["count"], missing=missing,
-                        resolution_m=round(resolution, 2))
+                        failed_tiles=failures.count, resolution_m=round(resolution, 2))
     result.web = dict(tiles=dict(min_zoom=min_zoom, max_zoom=zoom, bounds=[west, south, east, north]))
     return result

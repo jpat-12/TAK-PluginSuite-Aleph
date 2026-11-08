@@ -5,8 +5,14 @@ throws away a whole imagery layer (seen in the first live Illinois capture). Her
 outcome is reported on its own: bytes, None (the source has no data there — HTTP 404), or the
 exception. The layer decides how many failures it tolerates, and since failed tiles aren't
 written to disk, retrying the job fetches only the gaps.
+
+Before a layer gives up on a tile it gets one automatic second pass (fetch_retrying): bursts of
+502s from a rendering ImageServer usually clear within seconds, so most gaps never reach the user.
+Whatever still fails is counted (Failures.count → the layer's `failed_tiles` stat) and the
+clients offer a "Retry missing tiles" button, which re-runs the job and fetches only those.
 """
 
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -37,6 +43,31 @@ def fetch_each(client, addresses, workers):
         finally:
             for future in pending:
                 future.cancel()
+
+
+RETRY_PAUSE_S = 5.0  # module-level so tests can zero it
+
+
+def fetch_retrying(fetch, client, addresses, workers, on_retry=None):
+    """Run `fetch` (fetch_each, or a test fake), then retry the tiles that errored once more after a
+    short pause at half the concurrency. Yields (index, outcome) exactly once per address, failures
+    from the first pass only after their second attempt."""
+    failed = []
+    for index, outcome in enumerate(fetch(client, addresses, workers)):
+        if isinstance(outcome, Exception):
+            failed.append(index)
+        else:
+            yield index, outcome
+    if not failed:
+        return
+    if on_retry:
+        on_retry(len(failed))
+    deadline = time.monotonic() + RETRY_PAUSE_S
+    while time.monotonic() < deadline:
+        if client is not None:
+            client.check_cancel()
+        time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
+    yield from zip(failed, fetch(client, [addresses[i] for i in failed], max(1, workers // 2)))
 
 
 class Failures:

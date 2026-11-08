@@ -23,14 +23,19 @@ cd ../atak && ./gradlew assembleCivDebug testCivDebugUnitTest                # A
 
 5. Settings → Refresh App → menu → **Aleph Capture** → Draw box over a ~2 km² Illinois area →
    estimate shows → Capture → progress reaches **complete** in ~1–2 min.
-6. **Show** → NAIP imagery, OSM lines and the dashed outline appear over the basemap; CoT
-   markers stay on top. A legend appears bottom-left (above the GPS panel) listing the
-   imagery and only the OSM categories in the capture; its header collapses it; **Hide** removes it.
-   Point lookup returns an elevation.
+6. Toggle **Imagery** → NAIP imagery and the dashed outline appear over the basemap; **OSM** adds
+   the lines on top of the imagery (in either order); **Photos** adds the photo dots. CoT markers
+   stay on top. Switching every dataset off removes the capture from the map. A legend appears
+   bottom-left (above the GPS panel) listing only the datasets switched on, and only the OSM
+   categories in the capture; its header collapses it. Point lookup returns an elevation.
    **Compare** → the area becomes a slider: capture west of the divider, live basemap east of it.
    Drag the handle (or the panel's range) both ways, pan/rotate/pitch — the two halves stay
-   aligned; the attribution still lists the capture's sources. **Compare** again (or **Hide**)
-   puts the normal preview back.
+   aligned; the attribution still lists the capture's sources. Toggling a dataset while comparing
+   keeps the divider where it was. **Compare** again puts the normal preview back.
+   Tile trouble: stop the Aleph service for ~10 s while imagery is shown and pan → after a few
+   seconds the plugin reloads the tiles once by itself; if they still fail, the card shows
+   **Reload tiles** — start the service, press it, the imagery fills in. A capture whose imagery
+   still had failed tiles after the service's own automatic retry shows **Retry N missing tiles**.
 7. Download the package → it's a zip with `MANIFEST/manifest.xml`.
 
 ## ATAK (plan gate: package works with the device in airplane mode)

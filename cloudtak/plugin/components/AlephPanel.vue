@@ -193,12 +193,34 @@
                         </div>
                         <div class='btn-list mt-1'>
                             <template v-if='job.state === "complete" && job.links'>
-                                <button
-                                    class='btn btn-sm'
-                                    @click='toggleOnMap(job)'
+                                <div
+                                    class='btn-group'
+                                    role='group'
+                                    aria-label='Datasets shown on the map'
                                 >
-                                    <IconMap :size='14' />&nbsp;{{ shown[job.id] ? "Hide" : "Show" }}
-                                </button>
+                                    <button
+                                        v-for='dataset in availableDatasets(job)'
+                                        :key='dataset'
+                                        class='btn btn-sm'
+                                        :class='{ "btn-primary": isOn(job, dataset) }'
+                                        :aria-pressed='isOn(job, dataset)'
+                                        :title='`${isOn(job, dataset) ? "Hide" : "Show"} ${DATASET_LABELS[dataset].toLowerCase()} on the map`'
+                                        @click='toggleDataset(job, dataset)'
+                                    >
+                                        <IconMap
+                                            v-if='dataset === "imagery"'
+                                            :size='14'
+                                        />
+                                        <IconRoad
+                                            v-else-if='dataset === "osm"'
+                                            :size='14'
+                                        />
+                                        <IconCamera
+                                            v-else
+                                            :size='14'
+                                        />&nbsp;{{ DATASET_LABELS[dataset] }}
+                                    </button>
+                                </div>
                                 <button
                                     v-if='hasMapData(job)'
                                     class='btn btn-sm'
@@ -224,10 +246,30 @@
                                 <IconRefresh :size='14' />&nbsp;Retry
                             </button>
                             <button
+                                v-else-if='job.state === "complete" && failedTiles(job)'
+                                class='btn btn-sm btn-warning'
+                                :title='`${failedTiles(job)} imagery tiles failed to download even after an automatic retry; this fetches only those`'
+                                @click='retry(job)'
+                            >
+                                <IconRefresh :size='14' />&nbsp;Retry {{ failedTiles(job) }} missing tiles
+                            </button>
+                            <button
                                 class='btn btn-sm btn-ghost-danger'
                                 @click='remove(job)'
                             >
                                 <IconTrash :size='14' />
+                            </button>
+                        </div>
+                        <div
+                            v-if='tileTrouble.includes(job.id)'
+                            class='d-flex align-items-center gap-2 small text-warning mt-1'
+                        >
+                            <span>Some imagery tiles didn't load on the map, even after an automatic reload.</span>
+                            <button
+                                class='btn btn-sm ms-auto flex-shrink-0'
+                                @click='reloadTiles(job.id)'
+                            >
+                                <IconRefresh :size='14' />&nbsp;Reload tiles
                             </button>
                         </div>
                         <div
@@ -315,7 +357,8 @@
 <script setup lang='ts'>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import {
-    IconArrowsHorizontal, IconDownload, IconMap, IconMapPin, IconPackage, IconRefresh, IconSquare, IconTrash, IconViewfinder,
+    IconArrowsHorizontal, IconCamera, IconDownload, IconMap, IconMapPin, IconPackage, IconRefresh, IconRoad, IconSquare,
+    IconTrash, IconViewfinder,
 } from '@tabler/icons-vue';
 // Internal reach-in: CloudTAK's standard menu-panel chrome (header, back button), so the panel
 // looks native. Re-verify the path on CloudTAK upgrades (AGENTS.md §4).
@@ -323,11 +366,13 @@ import MenuTemplate from '../../../src/components/CloudTAK/util/MenuTemplate.vue
 import * as aleph from '../lib/client.ts';
 import { areaKm2, featureAreas, mapViewArea, type AreaCandidate } from '../lib/area.ts';
 import {
-    cancelInteraction, drawRectangle, hasMapData, hideJob, isShown, pickPoint, showDraft, showJob, zoomTo,
+    availableDatasets, cancelInteraction, DATASETS, drawRectangle, hasMapData, hideJob, onTileTrouble, pickPoint, reloadTiles,
+    setJobDatasets, shownDatasets, showDraft, showJob, zoomTo, type Dataset,
 } from '../lib/map-layers.ts';
 import { onSwipeChange, setSwipeFraction, startSwipe, stopSwipe, swipeState, type SwipeState } from '../lib/swipe.ts';
 import type { AlephInfo, Estimate, Job, LayerName, LayerProgress, Polygon, PointResult } from '../lib/types.ts';
 
+const DATASET_LABELS = Object.fromEntries(DATASETS.map((d) => [d.key, d.label])) as Record<Dataset, string>;
 const LAYER_LABELS: Record<LayerName, string> = {
     imagery: 'Imagery (MBTiles)',
     elevation: 'Elevation (DTED + GeoTIFF)',
@@ -349,7 +394,11 @@ const zoom = ref(17);
 const name = ref('');
 const estimateResult = ref<Estimate | null>(null);
 const jobs = ref<Job[]>([]);
-const shown = reactive<Record<string, boolean>>({});
+const shown = reactive<Record<string, Dataset[]>>({});     // datasets of each capture on the map
+const tileTrouble = ref<string[]>([]);
+const unsubscribeTiles = onTileTrouble((ids) => {
+    tileTrouble.value = ids;
+});
 const drawing = ref(false);
 const picking = ref(false);
 const submitting = ref(false);
@@ -455,7 +504,7 @@ async function refreshEstimate(): Promise<void> {
 async function refreshJobs(): Promise<void> {
     try {
         jobs.value = await aleph.listJobs();
-        for (const job of jobs.value) shown[job.id] = isShown(job);
+        for (const job of jobs.value) shown[job.id] = job.links ? shownDatasets(job.id) : [];
     } catch (err) {
         error.value = errorText(err);
     }
@@ -476,15 +525,22 @@ async function submit(): Promise<void> {
     }
 }
 
-function toggleOnMap(job: Job): void {
-    if (shown[job.id]) {
-        hideJob(job.id);
-        shown[job.id] = false;
-    } else {
-        showJob(job, info.value?.imagery?.name);
-        shown[job.id] = true;
-        zoomTo(job.area);
-    }
+function isOn(job: Job, dataset: Dataset): boolean {
+    return (shown[job.id] ?? []).includes(dataset);
+}
+
+/** Switch one dataset of a capture on or off; the first one switched on zooms to the capture. */
+function toggleDataset(job: Job, dataset: Dataset): void {
+    const current = shown[job.id] ?? [];
+    const next = current.includes(dataset) ? current.filter((d) => d !== dataset) : [...current, dataset];
+    setJobDatasets(job, next, info.value?.imagery?.name);
+    shown[job.id] = shownDatasets(job.id);
+    if (!current.length && next.length) zoomTo(job.area);
+}
+
+/** Imagery tiles that still failed after the service's automatic retry (API.md "Tiles that fail"). */
+function failedTiles(job: Job): number {
+    return job.progress.imagery?.stats?.failed_tiles ?? 0;
 }
 
 /** The capture's area becomes a slider: capture west of the divider, base map east of it. */
@@ -493,9 +549,9 @@ function toggleCompare(job: Job): void {
         stopSwipe();
         return;
     }
-    if (!shown[job.id]) {
-        showJob(job, info.value?.imagery?.name);
-        shown[job.id] = true;
+    if (!(shown[job.id] ?? []).some((d) => d !== 'photos')) {
+        showJob(job, info.value?.imagery?.name);       // nothing to compare yet: switch everything on
+        shown[job.id] = shownDatasets(job.id);
     }
     zoomTo(job.area);
     startSwipe(job, info.value?.imagery?.name);
@@ -507,6 +563,9 @@ function onCompareInput(event: Event): void {
 
 async function retry(job: Job): Promise<void> {
     try {
+        // The preview would show stale gaps; it's offered again once the retry completes.
+        hideJob(job.id);
+        shown[job.id] = [];
         await aleph.retryJob(job.id);
         await refreshJobs();
     } catch (err) {
@@ -565,6 +624,7 @@ onMounted(async () => {
 // The compare outlives the panel (like shown captures); its map handle keeps working.
 onUnmounted(() => {
     unsubscribeSwipe();
+    unsubscribeTiles();
     if (timer) clearInterval(timer);
     cancelInteraction();
     showDraft(null);

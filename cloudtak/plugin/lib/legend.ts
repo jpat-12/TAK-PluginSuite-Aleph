@@ -5,7 +5,7 @@
 // Present while at least one capture is shown; collapsible (header click), remembered for the session.
 import type { GeoJSONSource, IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { pluginApi } from './plugin-api.ts';
-import { OSM_STYLES } from './map-layers.ts';
+import { OSM_STYLES, type Dataset } from './map-layers.ts';
 import { onSwipeChange, swipeState } from './swipe.ts';
 import type { Job } from './types.ts';
 
@@ -15,7 +15,8 @@ const CHIP_BG = '#4b5563';             // dark chip so white/yellow lines stay v
 interface Entry {
     job: Job;
     imagery: string;
-    osm: Set<string> | null;            // OSM categories in the capture; null until its GeoJSON has loaded
+    datasets: Dataset[];                // what the panel has switched on for this capture
+    osm: Set<string> | null;            // OSM categories in the capture; null until its GeoJSON has been read
 }
 
 const entries = new Map<string, Entry>();
@@ -119,13 +120,13 @@ class LegendControl implements IControl {
             body.append(row(el('span', 'flex:none;width:24px;'), `Divider at ${Math.round(swipe.fraction * 100)}% of the area`));
         }
 
-        const imagery = [...new Set(shown.filter((e) => e.job.links?.tiles).map((e) => e.imagery))];
+        const imagery = [...new Set(shown.filter((e) => e.datasets.includes('imagery')).map((e) => e.imagery))];
         if (imagery.length) {
             body.append(heading('Imagery'));
             for (const name of imagery) body.append(row(imagerySwatch(), name));
         }
 
-        const withOsm = shown.filter((e) => e.job.links?.osm);
+        const withOsm = shown.filter((e) => e.datasets.includes('osm'));
         if (withOsm.length) {
             body.append(heading('OpenStreetMap'));
             const loading = withOsm.some((e) => e.osm === null);
@@ -136,7 +137,7 @@ class LegendControl implements IControl {
             if (!styles.length) body.append(row(el('span', 'flex:none;width:24px;'), 'No mapped features'));
         }
 
-        if (shown.some((e) => e.job.links?.photos)) {
+        if (shown.some((e) => e.datasets.includes('photos'))) {
             body.append(heading('Photos'));
             body.append(row(dotSwatch(ACCENT), 'Street-level photo (Mapillary)'));
         }
@@ -186,11 +187,12 @@ function loadCategories(entry: Entry): void {
     m.on('sourcedata', onData);
 }
 
-export function legendAdd(job: Job, imagery: string): void {
-    const entry: Entry = { job, imagery, osm: job.links?.osm ? null : new Set() };
+/** Add or update a shown capture. OSM categories already read for it are kept. */
+export function legendAdd(job: Job, imagery: string, datasets: Dataset[]): void {
+    const entry: Entry = { job, imagery, datasets, osm: entries.get(job.id)?.osm ?? null };
     entries.set(job.id, entry);
     unsubscribeSwipe ??= onSwipeChange(() => control?.render());
-    if (entry.osm === null) loadCategories(entry);
+    if (entry.osm === null && datasets.includes('osm')) loadCategories(entry);
     refresh();
 }
 

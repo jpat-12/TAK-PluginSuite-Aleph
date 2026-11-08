@@ -19,7 +19,7 @@ from ..core.common import write_bytes
 from ..core.geo import corners, extent, grid, tiles
 from ..formats import dted, geotiff
 from ..formats.datapackage import Entry
-from ..net import Failures, fetch_each
+from ..net import Failures, fetch_each, fetch_retrying
 from . import LayerResult
 
 WORKERS = 8
@@ -75,7 +75,9 @@ def download(ctx, plan, root):
     addresses = [sources.TERRAIN_URL.format(z=plan["zoom"], x=t["x"], y=t["y"]) for t in pending]
     failures = Failures("Elevation", plan["count"])
     missing = 0
-    for tile, data in zip(pending, fetch_each(ctx.client, addresses, WORKERS)):
+    retry = lambda count: ctx.progress(f"Retrying {count} failed elevation tiles", done, plan["count"])
+    for index, data in fetch_retrying(fetch_each, ctx.client, addresses, WORKERS, on_retry=retry):
+        tile = pending[index]
         if isinstance(data, Exception):
             failures.add(data)
         elif data is None:

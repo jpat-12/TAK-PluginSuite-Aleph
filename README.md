@@ -77,7 +77,8 @@ infratak/                        infra-TAK integration (never edits infra-TAK's 
   aleph_caddy.py                 the Caddy site block, below infra-TAK's user-blocks marker
   heal.sh, systemd/              service unit + path unit that re-applies integration after infra-TAK rewrites
 cloudtak/                        CloudTAK plugin
-  plugin/                        web half → api/web/plugins/aleph/ (Vue 3 panel, map previews,
+  plugin/                        web half → api/web/plugins/aleph/ (Vue 3 panel, per-dataset map previews
+                                 with tile-failure reload,
                                  capture-vs-basemap swipe slider in lib/swipe.ts, map legend in
                                  lib/legend.ts, point lookup)
   server/plugin-aleph.ts         server half → api/routes/: relays JSON with a server-side proxy token
