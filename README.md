@@ -50,6 +50,7 @@ they paste the server URL + token into the ATAK plugin.
 
 ```
 VERSION                          one version for service, CloudTAK plugin and APK (PATCH-bump per build)
+OtherDataSets.md                 candidate open datasets + the elevation-in-every-TAK-client plan (not built yet)
 docs/
   API.md                         the /api/v1 contract + package format — every client builds against this
   INFRATAK-COMPATIBILITY.md      why/how it runs on any infra-TAK version; the every-release test
